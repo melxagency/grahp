@@ -3,46 +3,35 @@ on:
   schedule:
     - cron: "0 */6 * * *"
   workflow_dispatch:
-
 jobs:
   count-members:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
-
       - name: Fetch Group IDs from Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
           echo "📡 Fetching group IDs from Supabase..."
-
           RESPONSE=$(curl -s \
-            "${SUPABASE_URL}/rest/v1/facebook_groups?select=id_group" \
+            "${SUPABASE_URL}/rest/v1/facebook_groups?select=id_group&limit=1000" \
             -H "apikey: ${SUPABASE_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_KEY}" \
-            -H "Content-Type: application/json")
-
+            -H "Content-Type: application/json" \
+            -H "Range: 0-999")
           echo "Supabase response: $RESPONSE"
-
-          # Extraer los IDs como lista separada por saltos de línea
           GROUP_IDS=$(echo "$RESPONSE" | jq -r '.[].id_group')
-
           if [ -z "$GROUP_IDS" ]; then
             echo "❌ No group IDs found in Supabase. Aborting."
             exit 1
           fi
-
           echo "✅ Group IDs found:"
           echo "$GROUP_IDS"
-
-          # Guardar para el siguiente paso
           echo "$GROUP_IDS" > group_ids.txt
-
       - name: Fetch Facebook Group Members
         env:
           FACEBOOK_TOKEN: ${{ secrets.FACEBOOK_TOKEN }}
@@ -50,20 +39,16 @@ jobs:
           echo "🔎 Starting Facebook Groups member count..."
           TOTAL=0
           echo "-----------------------------"
-
           while IFS= read -r GROUP_ID; do
             [ -z "$GROUP_ID" ] && continue
-
             echo "📦 Group: $GROUP_ID"
             RESPONSE=$(curl -s "https://graph.facebook.com/v25.0/${GROUP_ID}?fields=member_count&access_token=${FACEBOOK_TOKEN}")
             echo "$RESPONSE"
-
             COUNT=$(echo "$RESPONSE" | jq '.member_count // 0')
             echo "👥 Members: $COUNT"
             TOTAL=$((TOTAL + COUNT))
             echo "-----------------------------"
           done < group_ids.txt
-
           echo "============================="
           echo "📊 TOTAL MEMBERS: $TOTAL"
           echo "============================="
