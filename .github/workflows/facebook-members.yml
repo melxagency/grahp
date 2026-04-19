@@ -1,37 +1,65 @@
-run: |
-  echo "🔎 Starting Facebook Groups member count..."
+name: Facebook Group Members Counter
 
-  GROUPS=(
-    "8481964255255929"
-  )
+on:
+  schedule:
+    - cron: "0 */6 * * *"  # cada 6 horas
+  workflow_dispatch:
 
-  TOTAL=0
+jobs:
+  count-members:
+    runs-on: ubuntu-latest
 
-  for GROUP_ID in "${GROUPS[@]}"
-  do
-    echo "-----------------------------"
-    echo "📦 Checking group: $GROUP_ID"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    RESPONSE=$(curl -s "https://graph.facebook.com/v25.0/${GROUP_ID}?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
 
-    echo "Raw response: $RESPONSE"
+      - name: Fetch Facebook Group Members
+        env:
+          FACEBOOK_TOKEN: ${{ secrets.FACEBOOK_TOKEN }}
+        run: |
+          echo "🔎 Starting Facebook Groups member count..."
 
-    ERROR=$(echo "$RESPONSE" | jq -r '.error.message // empty')
+          # 👉 Lista de grupos (IDs numéricos recomendados)
+          GROUPS=(
+            "8481964255255929"
+            "8856301654435091"
+            "6166833830005702"
+            "5111591572270244"
+            "2938946762934546"
+            "1793848928019756"
+          )
 
-    if [ ! -z "$ERROR" ]; then
-      echo "❌ Error: $ERROR"
-      continue
-    fi
+          TOTAL=0
 
-    COUNT=$(echo "$RESPONSE" | jq '.member_count')
+          for GROUP_ID in "${GROUPS[@]}"
+          do
+            echo "-----------------------------"
+            echo "📦 Checking group: $GROUP_ID"
 
-    COUNT=${COUNT:-0}
+            RESPONSE=$(curl -s "https://graph.facebook.com/v25.0/${GROUP_ID}?fields=member_count&access_token=${FACEBOOK_TOKEN}")
 
-    echo "👥 Members: $COUNT"
+            echo "Raw response: $RESPONSE"
 
-    TOTAL=$((TOTAL + COUNT))
-  done
+            ERROR=$(echo "$RESPONSE" | jq -r '.error.message // empty')
 
-  echo "============================="
-  echo "📊 TOTAL MEMBERS ACROSS GROUPS: $TOTAL"
-  echo "============================="
+            if [ ! -z "$ERROR" ]; then
+              echo "❌ Error: $ERROR"
+              continue
+            fi
+
+            COUNT=$(echo "$RESPONSE" | jq '.member_count')
+
+            # fallback si viene null
+            COUNT=${COUNT:-0}
+
+            echo "👥 Members: $COUNT"
+
+            TOTAL=$((TOTAL + COUNT))
+          done
+
+          echo "============================="
+          echo "📊 TOTAL MEMBERS ACROSS GROUPS: $TOTAL"
+          echo "============================="
