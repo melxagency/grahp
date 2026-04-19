@@ -74,7 +74,7 @@ jobs:
 
           echo "-----------------------------"
           echo "📦 Group: 568661464773769"
-          R6=$(curl -s "https://graph.facebook.com/v25.0/cubanosennicaragua1?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          R6=$(curl -s "https://graph.facebook.com/v25.0/568661464773769?fields=member_count&access_token=${FACEBOOK_TOKEN}")
           echo "$R7"
           C6=$(echo "$R7" | jq '.member_count // 0')
           echo "👥 Members: $C7"
