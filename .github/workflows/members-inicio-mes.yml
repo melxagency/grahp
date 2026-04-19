@@ -1,44 +1,10 @@
-name: Miembros de Inicio del Mes
-on:
-  schedule:
-    - cron: "10 4 1 * *"
-  workflow_dispatch:
-jobs:
-  count-members:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-      - name: Fetch Group IDs from Supabase
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: |
-          echo "📡 Fetching group IDs from Supabase..."
-          RESPONSE=$(curl -s \
-            "${SUPABASE_URL}/rest/v1/facebook_groups?select=id_group&limit=1000" \
-            -H "apikey: ${SUPABASE_KEY}" \
-            -H "Authorization: Bearer ${SUPABASE_KEY}" \
-            -H "Content-Type: application/json" \
-            -H "Range: 0-999")
-          GROUP_IDS=$(echo "$RESPONSE" | jq -r '.[].id_group')
-          if [ -z "$GROUP_IDS" ]; then
-            echo "❌ No group IDs found in Supabase. Aborting."
-            exit 1
-          fi
-          echo "✅ Group IDs found:"
-          echo "$GROUP_IDS"
-          echo "$GROUP_IDS" > group_ids.txt
-
-      - name: Fetch Facebook Group Members and Update miembros_inicio_mes
+- name: Fetch Facebook Group Members and Update Supabase
         env:
           FACEBOOK_TOKEN: ${{ secrets.FACEBOOK_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          echo "🔎 Registrando miembros inicio de mes..."
+          echo "🔎 Starting Facebook Groups member count..."
           TOTAL=0
           UPDATED=0
           ERRORS=0
@@ -56,6 +22,8 @@ jobs:
               echo "⚠️ Error fetching group $GROUP_ID: $ERROR"
               ERRORS=$((ERRORS + 1))
               echo "-----------------------------"
+              # Esperar 30 segundos si hay rate limit antes de continuar
+              sleep 30
               continue
             fi
 
@@ -71,10 +39,10 @@ jobs:
                 -H "Authorization: Bearer ${SUPABASE_KEY}" \
                 -H "Content-Type: application/json" \
                 -H "Prefer: return=minimal" \
-                -d "{\"miembros_inicio_mes\": ${COUNT}, \"miembros_actuales\": ${COUNT}}")
+                -d "{\"miembros_actuales\": ${COUNT}, \"miembros_inicio_dia\": ${COUNT}}")
 
               if [ "$UPDATE_RESPONSE" = "204" ]; then
-                echo "✅ Updated miembros_inicio_mes in Supabase"
+                echo "✅ Updated in Supabase"
                 UPDATED=$((UPDATED + 1))
               else
                 echo "❌ Failed to update Supabase (HTTP $UPDATE_RESPONSE)"
@@ -87,6 +55,9 @@ jobs:
             fi
 
             echo "-----------------------------"
+            # Esperar 2 segundos entre cada grupo para no saturar la API
+            sleep 2
+
           done < group_ids.txt
 
           echo "============================="
