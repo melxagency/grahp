@@ -1,4 +1,4 @@
-name: Facebook Group Members Counter
+name: Miembros inicio del dia
 on:
   schedule:
     - cron: "1 4 * * *"
@@ -75,7 +75,7 @@ jobs:
                 -H "Authorization: Bearer ${SUPABASE_KEY}" \
                 -H "Content-Type: application/json" \
                 -H "Prefer: return=minimal" \
-                -d "{\"miembros_actuales\": ${COUNT}}")
+                -d "{\"miembros_actuales\": ${COUNT}, \"miembros_inicio_dia\": ${COUNT}}")
 
               if [ "$UPDATE_RESPONSE" = "204" ]; then
                 echo "✅ Updated in Supabase"
