@@ -1,50 +1,37 @@
-name: Facebook Group Members Counter
+run: |
+  echo "🔎 Starting Facebook Groups member count..."
 
-on:
-  schedule:
-    - cron: "0 */6 * * *"  # cada 6 horas (ajústalo)
-  workflow_dispatch:
+  GROUPS=(
+    "8481964255255929"
+  )
 
-jobs:
-  count-members:
-    runs-on: ubuntu-latest
+  TOTAL=0
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+  for GROUP_ID in "${GROUPS[@]}"
+  do
+    echo "-----------------------------"
+    echo "📦 Checking group: $GROUP_ID"
 
-      - name: Install jq
-        run: sudo apt-get install -y jq
+    RESPONSE=$(curl -s "https://graph.facebook.com/v25.0/${GROUP_ID}?fields=member_count&access_token=${FACEBOOK_TOKEN}")
 
-      - name: Fetch Facebook Group Members
-        env:
-          FACEBOOK_TOKEN: ${{ secrets.FACEBOOK_TOKEN }}
-        run: |
-          echo "🔎 Starting Facebook Groups member count..."
+    echo "Raw response: $RESPONSE"
 
-          # 👉 Lista de grupos (puedes agregar más IDs aquí)
-          GROUPS=(
-            "8481964255255929"
-          )
+    ERROR=$(echo "$RESPONSE" | jq -r '.error.message // empty')
 
-          TOTAL=0
+    if [ ! -z "$ERROR" ]; then
+      echo "❌ Error: $ERROR"
+      continue
+    fi
 
-          for GROUP_ID in "${GROUPS[@]}"
-          do
-            echo "-----------------------------"
-            echo "📦 Checking group: $GROUP_ID"
+    COUNT=$(echo "$RESPONSE" | jq '.member_count')
 
-            RESPONSE=$(curl -s "https://graph.facebook.com/v25.0/${GROUP_ID}?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+    COUNT=${COUNT:-0}
 
-            echo "Raw response: $RESPONSE"
+    echo "👥 Members: $COUNT"
 
-            COUNT=$(echo $RESPONSE | jq '.member_count // 0')
+    TOTAL=$((TOTAL + COUNT))
+  done
 
-            echo "👥 Members: $COUNT"
-
-            TOTAL=$((TOTAL + COUNT))
-          done
-
-          echo "============================="
-          echo "📊 TOTAL MEMBERS ACROSS GROUPS: $TOTAL"
-          echo "============================="
+  echo "============================="
+  echo "📊 TOTAL MEMBERS ACROSS GROUPS: $TOTAL"
+  echo "============================="
