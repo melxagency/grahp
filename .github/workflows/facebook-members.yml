@@ -17,106 +17,608 @@ jobs:
         run: |
           echo "🔎 Starting Facebook Groups member count..."
           TOTAL=0
-
-          GROUPS=(
-            "cubanosenflorida1"
-            "8856301654435091"
-            "8481964255255929"
-            "cubanosennicaragua1"
-            "6166833830005702"
-            "5111591572270244"
-            "2938946762934546"
-            "revolicoenlahabanacu"
-            "cubanosencdmx1"
-            "ventasvueloscubanicaragua1"
-            "cubanosenwestpalm"
-            "compradedivisasholguin"
-            "cubanosenmexico11"
-            "1793848928019756"
-            "1710355106466724"
-            "cubanosenestadosunido"
-            "cubanosenmexicodf"
-            "1669575096953824"
-            "1638163006763331"
-            "1586579855232010"
-            "1475292780033710"
-            "cubanosenuruguay1"
-            "1447313812632874"
-            "1393590281134164"
-            "cubanosentapachula"
-            "1250722932600050"
-            "1200494574644363"
-            "1196671070795170"
-            "cubanosenmontevideo1"
-            "1192059578753923"
-            "cubanosenlouisville1"
-            "1131940885160919"
-            "cubanosencalifornia1"
-            "1099280141817883"
-            "cubanosenpuebla"
-            "1078984147279844"
-            "cubanosenorlando1"
-            "cubanosentampa"
-            "1045885620427058"
-            "1042739023970914"
-            "ciberseguridadcuba"
-            "999020703807085"
-            "cubanosentoronto1"
-            "cubanosencancun1"
-            "907496870991545"
-            "863786915709008"
-            "860252276064532"
-            "857947516509744"
-            "839944551318267"
-            "cubanosenciudaddemexico1"
-            "cubanosenmiami2"
-            "tiendavirtualholguin"
-            "trabajoparacubanosenmiami1"
-            "583963487621974"
-            "568661464773769"
-            "566482719102207"
-            "556178317094936"
-            "545541007851013"
-            "536552832594558"
-            "526380219975366"
-            "497862709831151"
-            "481233711027273"
-            "480678754379552"
-            "449814127723696"
-            "440364635656790"
-            "434744529655372"
-            "419935192381004"
-            "cubanosencanada1"
-            "revolicosantaclara1"
-            "372602027276911"
-            "cubanosentexas1"
-            "revolicocompraventaholguin"
-            "cubanosenlasvegas1"
-            "cubanosenflorida2"
-            "325210957300002"
-            "cubanosenhouston1"
-            "285484860940817"
-            "cubanosenkentucky1"
-            "249366053545622"
-            "revolicocienfuegos1"
-            "2261107397601516"
-            "2163845177296476"
-            "1760352071445266"
-            "1710976649688975"
-            "1704354747044774"
-            "1985567971886403"
-          )
-
-          for GROUP_ID in "${GROUPS[@]}"; do
-            echo "-----------------------------"
-            echo "📦 Group: $GROUP_ID"
-            RESPONSE=$(curl -s "https://graph.facebook.com/v25.0/${GROUP_ID}?fields=member_count&access_token=${FACEBOOK_TOKEN}")
-            echo "$RESPONSE"
-            COUNT=$(echo "$RESPONSE" | jq '.member_count // 0')
-            echo "👥 Members: $COUNT"
-            TOTAL=$((TOTAL + COUNT))
-          done
-
+          echo "-----------------------------"
+          echo "📦 Group: cubanosenflorida1"
+          R1=$(curl -s "https://graph.facebook.com/v25.0/cubanosenflorida1?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R1"
+          C1=$(echo "$R1" | jq '.member_count // 0')
+          echo "👥 Members: $C1"
+          TOTAL=$((TOTAL + C1))
+          echo "-----------------------------"
+          echo "📦 Group: 8856301654435091"
+          R2=$(curl -s "https://graph.facebook.com/v25.0/8856301654435091?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R2"
+          C2=$(echo "$R2" | jq '.member_count // 0')
+          echo "👥 Members: $C2"
+          TOTAL=$((TOTAL + C2))
+          echo "-----------------------------"
+          echo "📦 Group: 8481964255255929"
+          R3=$(curl -s "https://graph.facebook.com/v25.0/8481964255255929?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R3"
+          C3=$(echo "$R3" | jq '.member_count // 0')
+          echo "👥 Members: $C3"
+          TOTAL=$((TOTAL + C3))
+          echo "-----------------------------"
+          echo "📦 Group: cubanosennicaragua1"
+          R4=$(curl -s "https://graph.facebook.com/v25.0/cubanosennicaragua1?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R4"
+          C4=$(echo "$R4" | jq '.member_count // 0')
+          echo "👥 Members: $C4"
+          TOTAL=$((TOTAL + C4))
+          echo "-----------------------------"
+          echo "📦 Group: 6166833830005702"
+          R5=$(curl -s "https://graph.facebook.com/v25.0/6166833830005702?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R5"
+          C5=$(echo "$R5" | jq '.member_count // 0')
+          echo "👥 Members: $C5"
+          TOTAL=$((TOTAL + C5))
+          echo "-----------------------------"
+          echo "📦 Group: 5111591572270244"
+          R6=$(curl -s "https://graph.facebook.com/v25.0/5111591572270244?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R6"
+          C6=$(echo "$R6" | jq '.member_count // 0')
+          echo "👥 Members: $C6"
+          TOTAL=$((TOTAL + C6))
+          echo "-----------------------------"
+          echo "📦 Group: 2938946762934546"
+          R7=$(curl -s "https://graph.facebook.com/v25.0/2938946762934546?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R7"
+          C7=$(echo "$R7" | jq '.member_count // 0')
+          echo "👥 Members: $C7"
+          TOTAL=$((TOTAL + C7))
+          echo "-----------------------------"
+          echo "📦 Group: revolicoenlahabanacu"
+          R8=$(curl -s "https://graph.facebook.com/v25.0/revolicoenlahabanacu?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R8"
+          C8=$(echo "$R8" | jq '.member_count // 0')
+          echo "👥 Members: $C8"
+          TOTAL=$((TOTAL + C8))
+          echo "-----------------------------"
+          echo "📦 Group: cubanosencdmx1"
+          R9=$(curl -s "https://graph.facebook.com/v25.0/cubanosencdmx1?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R9"
+          C9=$(echo "$R9" | jq '.member_count // 0')
+          echo "👥 Members: $C9"
+          TOTAL=$((TOTAL + C9))
+          echo "-----------------------------"
+          echo "📦 Group: ventasvueloscubanicaragua1"
+          R10=$(curl -s "https://graph.facebook.com/v25.0/ventasvueloscubanicaragua1?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R10"
+          C10=$(echo "$R10" | jq '.member_count // 0')
+          echo "👥 Members: $C10"
+          TOTAL=$((TOTAL + C10))
+          echo "-----------------------------"
+          echo "📦 Group: cubanosenwestpalm"
+          R11=$(curl -s "https://graph.facebook.com/v25.0/cubanosenwestpalm?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R11"
+          C11=$(echo "$R11" | jq '.member_count // 0')
+          echo "👥 Members: $C11"
+          TOTAL=$((TOTAL + C11))
+          echo "-----------------------------"
+          echo "📦 Group: compradedivisasholguin"
+          R12=$(curl -s "https://graph.facebook.com/v25.0/compradedivisasholguin?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R12"
+          C12=$(echo "$R12" | jq '.member_count // 0')
+          echo "👥 Members: $C12"
+          TOTAL=$((TOTAL + C12))
+          echo "-----------------------------"
+          echo "📦 Group: cubanosenmexico11"
+          R13=$(curl -s "https://graph.facebook.com/v25.0/cubanosenmexico11?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R13"
+          C13=$(echo "$R13" | jq '.member_count // 0')
+          echo "👥 Members: $C13"
+          TOTAL=$((TOTAL + C13))
+          echo "-----------------------------"
+          echo "📦 Group: 1793848928019756"
+          R14=$(curl -s "https://graph.facebook.com/v25.0/1793848928019756?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R14"
+          C14=$(echo "$R14" | jq '.member_count // 0')
+          echo "👥 Members: $C14"
+          TOTAL=$((TOTAL + C14))
+          echo "-----------------------------"
+          echo "📦 Group: 1710355106466724"
+          R15=$(curl -s "https://graph.facebook.com/v25.0/1710355106466724?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R15"
+          C15=$(echo "$R15" | jq '.member_count // 0')
+          echo "👥 Members: $C15"
+          TOTAL=$((TOTAL + C15))
+          echo "-----------------------------"
+          echo "📦 Group: cubanosenestadosunido"
+          R16=$(curl -s "https://graph.facebook.com/v25.0/cubanosenestadosunido?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R16"
+          C16=$(echo "$R16" | jq '.member_count // 0')
+          echo "👥 Members: $C16"
+          TOTAL=$((TOTAL + C16))
+          echo "-----------------------------"
+          echo "📦 Group: cubanosenmexicodf"
+          R17=$(curl -s "https://graph.facebook.com/v25.0/cubanosenmexicodf?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R17"
+          C17=$(echo "$R17" | jq '.member_count // 0')
+          echo "👥 Members: $C17"
+          TOTAL=$((TOTAL + C17))
+          echo "-----------------------------"
+          echo "📦 Group: 1669575096953824"
+          R18=$(curl -s "https://graph.facebook.com/v25.0/1669575096953824?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R18"
+          C18=$(echo "$R18" | jq '.member_count // 0')
+          echo "👥 Members: $C18"
+          TOTAL=$((TOTAL + C18))
+          echo "-----------------------------"
+          echo "📦 Group: 1638163006763331"
+          R19=$(curl -s "https://graph.facebook.com/v25.0/1638163006763331?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R19"
+          C19=$(echo "$R19" | jq '.member_count // 0')
+          echo "👥 Members: $C19"
+          TOTAL=$((TOTAL + C19))
+          echo "-----------------------------"
+          echo "📦 Group: 1586579855232010"
+          R20=$(curl -s "https://graph.facebook.com/v25.0/1586579855232010?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R20"
+          C20=$(echo "$R20" | jq '.member_count // 0')
+          echo "👥 Members: $C20"
+          TOTAL=$((TOTAL + C20))
+          echo "-----------------------------"
+          echo "📦 Group: 1475292780033710"
+          R21=$(curl -s "https://graph.facebook.com/v25.0/1475292780033710?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R21"
+          C21=$(echo "$R21" | jq '.member_count // 0')
+          echo "👥 Members: $C21"
+          TOTAL=$((TOTAL + C21))
+          echo "-----------------------------"
+          echo "📦 Group: cubanosenuruguay1"
+          R22=$(curl -s "https://graph.facebook.com/v25.0/cubanosenuruguay1?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R22"
+          C22=$(echo "$R22" | jq '.member_count // 0')
+          echo "👥 Members: $C22"
+          TOTAL=$((TOTAL + C22))
+          echo "-----------------------------"
+          echo "📦 Group: 1447313812632874"
+          R23=$(curl -s "https://graph.facebook.com/v25.0/1447313812632874?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R23"
+          C23=$(echo "$R23" | jq '.member_count // 0')
+          echo "👥 Members: $C23"
+          TOTAL=$((TOTAL + C23))
+          echo "-----------------------------"
+          echo "📦 Group: 1393590281134164"
+          R24=$(curl -s "https://graph.facebook.com/v25.0/1393590281134164?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R24"
+          C24=$(echo "$R24" | jq '.member_count // 0')
+          echo "👥 Members: $C24"
+          TOTAL=$((TOTAL + C24))
+          echo "-----------------------------"
+          echo "📦 Group: cubanosentapachula"
+          R25=$(curl -s "https://graph.facebook.com/v25.0/cubanosentapachula?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R25"
+          C25=$(echo "$R25" | jq '.member_count // 0')
+          echo "👥 Members: $C25"
+          TOTAL=$((TOTAL + C25))
+          echo "-----------------------------"
+          echo "📦 Group: 1250722932600050"
+          R26=$(curl -s "https://graph.facebook.com/v25.0/1250722932600050?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R26"
+          C26=$(echo "$R26" | jq '.member_count // 0')
+          echo "👥 Members: $C26"
+          TOTAL=$((TOTAL + C26))
+          echo "-----------------------------"
+          echo "📦 Group: 1200494574644363"
+          R27=$(curl -s "https://graph.facebook.com/v25.0/1200494574644363?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R27"
+          C27=$(echo "$R27" | jq '.member_count // 0')
+          echo "👥 Members: $C27"
+          TOTAL=$((TOTAL + C27))
+          echo "-----------------------------"
+          echo "📦 Group: 1196671070795170"
+          R28=$(curl -s "https://graph.facebook.com/v25.0/1196671070795170?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R28"
+          C28=$(echo "$R28" | jq '.member_count // 0')
+          echo "👥 Members: $C28"
+          TOTAL=$((TOTAL + C28))
+          echo "-----------------------------"
+          echo "📦 Group: cubanosenmontevideo1"
+          R29=$(curl -s "https://graph.facebook.com/v25.0/cubanosenmontevideo1?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R29"
+          C29=$(echo "$R29" | jq '.member_count // 0')
+          echo "👥 Members: $C29"
+          TOTAL=$((TOTAL + C29))
+          echo "-----------------------------"
+          echo "📦 Group: 1192059578753923"
+          R30=$(curl -s "https://graph.facebook.com/v25.0/1192059578753923?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R30"
+          C30=$(echo "$R30" | jq '.member_count // 0')
+          echo "👥 Members: $C30"
+          TOTAL=$((TOTAL + C30))
+          echo "-----------------------------"
+          echo "📦 Group: cubanosenlouisville1"
+          R31=$(curl -s "https://graph.facebook.com/v25.0/cubanosenlouisville1?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R31"
+          C31=$(echo "$R31" | jq '.member_count // 0')
+          echo "👥 Members: $C31"
+          TOTAL=$((TOTAL + C31))
+          echo "-----------------------------"
+          echo "📦 Group: 1131940885160919"
+          R32=$(curl -s "https://graph.facebook.com/v25.0/1131940885160919?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R32"
+          C32=$(echo "$R32" | jq '.member_count // 0')
+          echo "👥 Members: $C32"
+          TOTAL=$((TOTAL + C32))
+          echo "-----------------------------"
+          echo "📦 Group: cubanosencalifornia1"
+          R33=$(curl -s "https://graph.facebook.com/v25.0/cubanosencalifornia1?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R33"
+          C33=$(echo "$R33" | jq '.member_count // 0')
+          echo "👥 Members: $C33"
+          TOTAL=$((TOTAL + C33))
+          echo "-----------------------------"
+          echo "📦 Group: 1099280141817883"
+          R34=$(curl -s "https://graph.facebook.com/v25.0/1099280141817883?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R34"
+          C34=$(echo "$R34" | jq '.member_count // 0')
+          echo "👥 Members: $C34"
+          TOTAL=$((TOTAL + C34))
+          echo "-----------------------------"
+          echo "📦 Group: cubanosenpuebla"
+          R35=$(curl -s "https://graph.facebook.com/v25.0/cubanosenpuebla?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R35"
+          C35=$(echo "$R35" | jq '.member_count // 0')
+          echo "👥 Members: $C35"
+          TOTAL=$((TOTAL + C35))
+          echo "-----------------------------"
+          echo "📦 Group: 1078984147279844"
+          R36=$(curl -s "https://graph.facebook.com/v25.0/1078984147279844?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R36"
+          C36=$(echo "$R36" | jq '.member_count // 0')
+          echo "👥 Members: $C36"
+          TOTAL=$((TOTAL + C36))
+          echo "-----------------------------"
+          echo "📦 Group: cubanosenorlando1"
+          R37=$(curl -s "https://graph.facebook.com/v25.0/cubanosenorlando1?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R37"
+          C37=$(echo "$R37" | jq '.member_count // 0')
+          echo "👥 Members: $C37"
+          TOTAL=$((TOTAL + C37))
+          echo "-----------------------------"
+          echo "📦 Group: cubanosentampa"
+          R38=$(curl -s "https://graph.facebook.com/v25.0/cubanosentampa?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R38"
+          C38=$(echo "$R38" | jq '.member_count // 0')
+          echo "👥 Members: $C38"
+          TOTAL=$((TOTAL + C38))
+          echo "-----------------------------"
+          echo "📦 Group: 1045885620427058"
+          R39=$(curl -s "https://graph.facebook.com/v25.0/1045885620427058?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R39"
+          C39=$(echo "$R39" | jq '.member_count // 0')
+          echo "👥 Members: $C39"
+          TOTAL=$((TOTAL + C39))
+          echo "-----------------------------"
+          echo "📦 Group: 1042739023970914"
+          R40=$(curl -s "https://graph.facebook.com/v25.0/1042739023970914?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R40"
+          C40=$(echo "$R40" | jq '.member_count // 0')
+          echo "👥 Members: $C40"
+          TOTAL=$((TOTAL + C40))
+          echo "-----------------------------"
+          echo "📦 Group: ciberseguridadcuba"
+          R41=$(curl -s "https://graph.facebook.com/v25.0/ciberseguridadcuba?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R41"
+          C41=$(echo "$R41" | jq '.member_count // 0')
+          echo "👥 Members: $C41"
+          TOTAL=$((TOTAL + C41))
+          echo "-----------------------------"
+          echo "📦 Group: 999020703807085"
+          R42=$(curl -s "https://graph.facebook.com/v25.0/999020703807085?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R42"
+          C42=$(echo "$R42" | jq '.member_count // 0')
+          echo "👥 Members: $C42"
+          TOTAL=$((TOTAL + C42))
+          echo "-----------------------------"
+          echo "📦 Group: cubanosentoronto1"
+          R43=$(curl -s "https://graph.facebook.com/v25.0/cubanosentoronto1?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R43"
+          C43=$(echo "$R43" | jq '.member_count // 0')
+          echo "👥 Members: $C43"
+          TOTAL=$((TOTAL + C43))
+          echo "-----------------------------"
+          echo "📦 Group: cubanosencancun1"
+          R44=$(curl -s "https://graph.facebook.com/v25.0/cubanosencancun1?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R44"
+          C44=$(echo "$R44" | jq '.member_count // 0')
+          echo "👥 Members: $C44"
+          TOTAL=$((TOTAL + C44))
+          echo "-----------------------------"
+          echo "📦 Group: 907496870991545"
+          R45=$(curl -s "https://graph.facebook.com/v25.0/907496870991545?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R45"
+          C45=$(echo "$R45" | jq '.member_count // 0')
+          echo "👥 Members: $C45"
+          TOTAL=$((TOTAL + C45))
+          echo "-----------------------------"
+          echo "📦 Group: 863786915709008"
+          R46=$(curl -s "https://graph.facebook.com/v25.0/863786915709008?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R46"
+          C46=$(echo "$R46" | jq '.member_count // 0')
+          echo "👥 Members: $C46"
+          TOTAL=$((TOTAL + C46))
+          echo "-----------------------------"
+          echo "📦 Group: 860252276064532"
+          R47=$(curl -s "https://graph.facebook.com/v25.0/860252276064532?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R47"
+          C47=$(echo "$R47" | jq '.member_count // 0')
+          echo "👥 Members: $C47"
+          TOTAL=$((TOTAL + C47))
+          echo "-----------------------------"
+          echo "📦 Group: 857947516509744"
+          R48=$(curl -s "https://graph.facebook.com/v25.0/857947516509744?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R48"
+          C48=$(echo "$R48" | jq '.member_count // 0')
+          echo "👥 Members: $C48"
+          TOTAL=$((TOTAL + C48))
+          echo "-----------------------------"
+          echo "📦 Group: 839944551318267"
+          R49=$(curl -s "https://graph.facebook.com/v25.0/839944551318267?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R49"
+          C49=$(echo "$R49" | jq '.member_count // 0')
+          echo "👥 Members: $C49"
+          TOTAL=$((TOTAL + C49))
+          echo "-----------------------------"
+          echo "📦 Group: cubanosenciudaddemexico1"
+          R50=$(curl -s "https://graph.facebook.com/v25.0/cubanosenciudaddemexico1?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R50"
+          C50=$(echo "$R50" | jq '.member_count // 0')
+          echo "👥 Members: $C50"
+          TOTAL=$((TOTAL + C50))
+          echo "-----------------------------"
+          echo "📦 Group: cubanosenmiami2"
+          R51=$(curl -s "https://graph.facebook.com/v25.0/cubanosenmiami2?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R51"
+          C51=$(echo "$R51" | jq '.member_count // 0')
+          echo "👥 Members: $C51"
+          TOTAL=$((TOTAL + C51))
+          echo "-----------------------------"
+          echo "📦 Group: tiendavirtualholguin"
+          R52=$(curl -s "https://graph.facebook.com/v25.0/tiendavirtualholguin?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R52"
+          C52=$(echo "$R52" | jq '.member_count // 0')
+          echo "👥 Members: $C52"
+          TOTAL=$((TOTAL + C52))
+          echo "-----------------------------"
+          echo "📦 Group: trabajoparacubanosenmiami1"
+          R53=$(curl -s "https://graph.facebook.com/v25.0/trabajoparacubanosenmiami1?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R53"
+          C53=$(echo "$R53" | jq '.member_count // 0')
+          echo "👥 Members: $C53"
+          TOTAL=$((TOTAL + C53))
+          echo "-----------------------------"
+          echo "📦 Group: 583963487621974"
+          R54=$(curl -s "https://graph.facebook.com/v25.0/583963487621974?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R54"
+          C54=$(echo "$R54" | jq '.member_count // 0')
+          echo "👥 Members: $C54"
+          TOTAL=$((TOTAL + C54))
+          echo "-----------------------------"
+          echo "📦 Group: 568661464773769"
+          R55=$(curl -s "https://graph.facebook.com/v25.0/568661464773769?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R55"
+          C55=$(echo "$R55" | jq '.member_count // 0')
+          echo "👥 Members: $C55"
+          TOTAL=$((TOTAL + C55))
+          echo "-----------------------------"
+          echo "📦 Group: 566482719102207"
+          R56=$(curl -s "https://graph.facebook.com/v25.0/566482719102207?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R56"
+          C56=$(echo "$R56" | jq '.member_count // 0')
+          echo "👥 Members: $C56"
+          TOTAL=$((TOTAL + C56))
+          echo "-----------------------------"
+          echo "📦 Group: 556178317094936"
+          R57=$(curl -s "https://graph.facebook.com/v25.0/556178317094936?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R57"
+          C57=$(echo "$R57" | jq '.member_count // 0')
+          echo "👥 Members: $C57"
+          TOTAL=$((TOTAL + C57))
+          echo "-----------------------------"
+          echo "📦 Group: 545541007851013"
+          R58=$(curl -s "https://graph.facebook.com/v25.0/545541007851013?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R58"
+          C58=$(echo "$R58" | jq '.member_count // 0')
+          echo "👥 Members: $C58"
+          TOTAL=$((TOTAL + C58))
+          echo "-----------------------------"
+          echo "📦 Group: 536552832594558"
+          R59=$(curl -s "https://graph.facebook.com/v25.0/536552832594558?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R59"
+          C59=$(echo "$R59" | jq '.member_count // 0')
+          echo "👥 Members: $C59"
+          TOTAL=$((TOTAL + C59))
+          echo "-----------------------------"
+          echo "📦 Group: 526380219975366"
+          R60=$(curl -s "https://graph.facebook.com/v25.0/526380219975366?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R60"
+          C60=$(echo "$R60" | jq '.member_count // 0')
+          echo "👥 Members: $C60"
+          TOTAL=$((TOTAL + C60))
+          echo "-----------------------------"
+          echo "📦 Group: 497862709831151"
+          R61=$(curl -s "https://graph.facebook.com/v25.0/497862709831151?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R61"
+          C61=$(echo "$R61" | jq '.member_count // 0')
+          echo "👥 Members: $C61"
+          TOTAL=$((TOTAL + C61))
+          echo "-----------------------------"
+          echo "📦 Group: 481233711027273"
+          R62=$(curl -s "https://graph.facebook.com/v25.0/481233711027273?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R62"
+          C62=$(echo "$R62" | jq '.member_count // 0')
+          echo "👥 Members: $C62"
+          TOTAL=$((TOTAL + C62))
+          echo "-----------------------------"
+          echo "📦 Group: 480678754379552"
+          R63=$(curl -s "https://graph.facebook.com/v25.0/480678754379552?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R63"
+          C63=$(echo "$R63" | jq '.member_count // 0')
+          echo "👥 Members: $C63"
+          TOTAL=$((TOTAL + C63))
+          echo "-----------------------------"
+          echo "📦 Group: 449814127723696"
+          R64=$(curl -s "https://graph.facebook.com/v25.0/449814127723696?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R64"
+          C64=$(echo "$R64" | jq '.member_count // 0')
+          echo "👥 Members: $C64"
+          TOTAL=$((TOTAL + C64))
+          echo "-----------------------------"
+          echo "📦 Group: 440364635656790"
+          R65=$(curl -s "https://graph.facebook.com/v25.0/440364635656790?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R65"
+          C65=$(echo "$R65" | jq '.member_count // 0')
+          echo "👥 Members: $C65"
+          TOTAL=$((TOTAL + C65))
+          echo "-----------------------------"
+          echo "📦 Group: 434744529655372"
+          R66=$(curl -s "https://graph.facebook.com/v25.0/434744529655372?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R66"
+          C66=$(echo "$R66" | jq '.member_count // 0')
+          echo "👥 Members: $C66"
+          TOTAL=$((TOTAL + C66))
+          echo "-----------------------------"
+          echo "📦 Group: 419935192381004"
+          R67=$(curl -s "https://graph.facebook.com/v25.0/419935192381004?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R67"
+          C67=$(echo "$R67" | jq '.member_count // 0')
+          echo "👥 Members: $C67"
+          TOTAL=$((TOTAL + C67))
+          echo "-----------------------------"
+          echo "📦 Group: cubanosencanada1"
+          R68=$(curl -s "https://graph.facebook.com/v25.0/cubanosencanada1?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R68"
+          C68=$(echo "$R68" | jq '.member_count // 0')
+          echo "👥 Members: $C68"
+          TOTAL=$((TOTAL + C68))
+          echo "-----------------------------"
+          echo "📦 Group: revolicosantaclara1"
+          R69=$(curl -s "https://graph.facebook.com/v25.0/revolicosantaclara1?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R69"
+          C69=$(echo "$R69" | jq '.member_count // 0')
+          echo "👥 Members: $C69"
+          TOTAL=$((TOTAL + C69))
+          echo "-----------------------------"
+          echo "📦 Group: 372602027276911"
+          R70=$(curl -s "https://graph.facebook.com/v25.0/372602027276911?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R70"
+          C70=$(echo "$R70" | jq '.member_count // 0')
+          echo "👥 Members: $C70"
+          TOTAL=$((TOTAL + C70))
+          echo "-----------------------------"
+          echo "📦 Group: cubanosentexas1"
+          R71=$(curl -s "https://graph.facebook.com/v25.0/cubanosentexas1?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R71"
+          C71=$(echo "$R71" | jq '.member_count // 0')
+          echo "👥 Members: $C71"
+          TOTAL=$((TOTAL + C71))
+          echo "-----------------------------"
+          echo "📦 Group: revolicocompraventaholguin"
+          R72=$(curl -s "https://graph.facebook.com/v25.0/revolicocompraventaholguin?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R72"
+          C72=$(echo "$R72" | jq '.member_count // 0')
+          echo "👥 Members: $C72"
+          TOTAL=$((TOTAL + C72))
+          echo "-----------------------------"
+          echo "📦 Group: cubanosenlasvegas1"
+          R73=$(curl -s "https://graph.facebook.com/v25.0/cubanosenlasvegas1?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R73"
+          C73=$(echo "$R73" | jq '.member_count // 0')
+          echo "👥 Members: $C73"
+          TOTAL=$((TOTAL + C73))
+          echo "-----------------------------"
+          echo "📦 Group: cubanosenflorida2"
+          R74=$(curl -s "https://graph.facebook.com/v25.0/cubanosenflorida2?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R74"
+          C74=$(echo "$R74" | jq '.member_count // 0')
+          echo "👥 Members: $C74"
+          TOTAL=$((TOTAL + C74))
+          echo "-----------------------------"
+          echo "📦 Group: 325210957300002"
+          R75=$(curl -s "https://graph.facebook.com/v25.0/325210957300002?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R75"
+          C75=$(echo "$R75" | jq '.member_count // 0')
+          echo "👥 Members: $C75"
+          TOTAL=$((TOTAL + C75))
+          echo "-----------------------------"
+          echo "📦 Group: cubanosenhouston1"
+          R76=$(curl -s "https://graph.facebook.com/v25.0/cubanosenhouston1?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R76"
+          C76=$(echo "$R76" | jq '.member_count // 0')
+          echo "👥 Members: $C76"
+          TOTAL=$((TOTAL + C76))
+          echo "-----------------------------"
+          echo "📦 Group: 285484860940817"
+          R77=$(curl -s "https://graph.facebook.com/v25.0/285484860940817?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R77"
+          C77=$(echo "$R77" | jq '.member_count // 0')
+          echo "👥 Members: $C77"
+          TOTAL=$((TOTAL + C77))
+          echo "-----------------------------"
+          echo "📦 Group: cubanosenkentucky1"
+          R78=$(curl -s "https://graph.facebook.com/v25.0/cubanosenkentucky1?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R78"
+          C78=$(echo "$R78" | jq '.member_count // 0')
+          echo "👥 Members: $C78"
+          TOTAL=$((TOTAL + C78))
+          echo "-----------------------------"
+          echo "📦 Group: 249366053545622"
+          R79=$(curl -s "https://graph.facebook.com/v25.0/249366053545622?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R79"
+          C79=$(echo "$R79" | jq '.member_count // 0')
+          echo "👥 Members: $C79"
+          TOTAL=$((TOTAL + C79))
+          echo "-----------------------------"
+          echo "📦 Group: revolicocienfuegos1"
+          R80=$(curl -s "https://graph.facebook.com/v25.0/revolicocienfuegos1?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R80"
+          C80=$(echo "$R80" | jq '.member_count // 0')
+          echo "👥 Members: $C80"
+          TOTAL=$((TOTAL + C80))
+          echo "-----------------------------"
+          echo "📦 Group: 2261107397601516"
+          R81=$(curl -s "https://graph.facebook.com/v25.0/2261107397601516?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R81"
+          C81=$(echo "$R81" | jq '.member_count // 0')
+          echo "👥 Members: $C81"
+          TOTAL=$((TOTAL + C81))
+          echo "-----------------------------"
+          echo "📦 Group: 2163845177296476"
+          R82=$(curl -s "https://graph.facebook.com/v25.0/2163845177296476?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R82"
+          C82=$(echo "$R82" | jq '.member_count // 0')
+          echo "👥 Members: $C82"
+          TOTAL=$((TOTAL + C82))
+          echo "-----------------------------"
+          echo "📦 Group: 1760352071445266"
+          R83=$(curl -s "https://graph.facebook.com/v25.0/1760352071445266?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R83"
+          C83=$(echo "$R83" | jq '.member_count // 0')
+          echo "👥 Members: $C83"
+          TOTAL=$((TOTAL + C83))
+          echo "-----------------------------"
+          echo "📦 Group: 1710976649688975"
+          R84=$(curl -s "https://graph.facebook.com/v25.0/1710976649688975?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R84"
+          C84=$(echo "$R84" | jq '.member_count // 0')
+          echo "👥 Members: $C84"
+          TOTAL=$((TOTAL + C84))
+          echo "-----------------------------"
+          echo "📦 Group: 1704354747044774"
+          R85=$(curl -s "https://graph.facebook.com/v25.0/1704354747044774?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R85"
+          C85=$(echo "$R85" | jq '.member_count // 0')
+          echo "👥 Members: $C85"
+          TOTAL=$((TOTAL + C85))
+          echo "-----------------------------"
+          echo "📦 Group: 1985567971886403"
+          R86=$(curl -s "https://graph.facebook.com/v25.0/1985567971886403?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R86"
+          C86=$(echo "$R86" | jq '.member_count // 0')
+          echo "👥 Members: $C86"
+          TOTAL=$((TOTAL + C86))
           echo "============================="
           echo "📊 TOTAL MEMBERS: $TOTAL"
           echo "============================="
