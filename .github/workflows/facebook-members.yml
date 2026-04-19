@@ -24,12 +24,8 @@ jobs:
 
           # 👉 Lista de grupos (puedes agregar más IDs aquí)
           GROUPS=(
-              "8481964255255929"   # Cubanos en Dubai-1
-              "8856301654435091"   # Reserva Cuba - Rusia
-              "6166833830005702"   # Revolico Matanzas
-              "5111591572270244"   # Revolico Ciego de Avila
-              "2938946762934546"   # Cuba - Panamá
-                )
+            "8481964255255929"
+          )
 
           TOTAL=0
 
