@@ -1,4 +1,4 @@
-name: Facebook Group Members - Inicio de Mes
+name: Miembros de Inicio del Mes
 on:
   schedule:
     - cron: "10 4 1 * *"
