@@ -1,0 +1,50 @@
+name: Facebook Group Members Counter
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"  # cada 6 horas (ajústalo)
+  workflow_dispatch:
+
+jobs:
+  count-members:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
+      - name: Fetch Facebook Group Members
+        env:
+          FACEBOOK_TOKEN: ${{ secrets.FACEBOOK_TOKEN }}
+        run: |
+          echo "🔎 Starting Facebook Groups member count..."
+
+          # 👉 Lista de grupos (puedes agregar más IDs aquí)
+          GROUPS=(
+            "8481964255255929"
+          )
+
+          TOTAL=0
+
+          for GROUP_ID in "${GROUPS[@]}"
+          do
+            echo "-----------------------------"
+            echo "📦 Checking group: $GROUP_ID"
+
+            RESPONSE=$(curl -s "https://graph.facebook.com/v25.0/${GROUP_ID}?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+
+            echo "Raw response: $RESPONSE"
+
+            COUNT=$(echo $RESPONSE | jq '.member_count // 0')
+
+            echo "👥 Members: $COUNT"
+
+            TOTAL=$((TOTAL + COUNT))
+          done
+
+          echo "============================="
+          echo "📊 TOTAL MEMBERS ACROSS GROUPS: $TOTAL"
+          echo "============================="
