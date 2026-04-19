@@ -39,7 +39,7 @@ jobs:
             echo "-----------------------------"
             echo "📦 Checking group: $GROUP_ID"
 
-            RESPONSE=$(curl -s "https://graph.facebook.com/v25.0/$8481964255255929?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+            RESPONSE=$(curl -s "https://graph.facebook.com/v25.0/8481964255255929?fields=member_count&access_token=${FACEBOOK_TOKEN}")
 
             echo "Raw response: $RESPONSE"
 
