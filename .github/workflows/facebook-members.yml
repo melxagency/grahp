@@ -72,6 +72,16 @@ jobs:
           echo "👥 Members: $C6"
           TOTAL=$((TOTAL + C6))
 
+          echo "-----------------------------"
+          echo "📦 Group: cubanosennicaragua1/"
+          R6=$(curl -s "https://graph.facebook.com/v25.0/cubanosennicaragua1/?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+          echo "$R7"
+          C6=$(echo "$R7" | jq '.member_count // 0')
+          echo "👥 Members: $C7"
+          TOTAL=$((TOTAL + C7))
+
+          
+
           echo "============================="
           echo "📊 TOTAL MEMBERS: $TOTAL"
           echo "============================="
