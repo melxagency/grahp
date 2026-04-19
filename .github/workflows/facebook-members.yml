@@ -1,7 +1,7 @@
 name: Facebook Group Members Counter
 on:
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: "0 11 * * *"
   workflow_dispatch:
 jobs:
   count-members:
@@ -32,23 +32,69 @@ jobs:
           echo "✅ Group IDs found:"
           echo "$GROUP_IDS"
           echo "$GROUP_IDS" > group_ids.txt
-      - name: Fetch Facebook Group Members
+
+      - name: Fetch Facebook Group Members and Update Supabase
         env:
           FACEBOOK_TOKEN: ${{ secrets.FACEBOOK_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
           echo "🔎 Starting Facebook Groups member count..."
           TOTAL=0
+          UPDATED=0
+          ERRORS=0
           echo "-----------------------------"
+
           while IFS= read -r GROUP_ID; do
             [ -z "$GROUP_ID" ] && continue
+
             echo "📦 Group: $GROUP_ID"
             RESPONSE=$(curl -s "https://graph.facebook.com/v25.0/${GROUP_ID}?fields=member_count&access_token=${FACEBOOK_TOKEN}")
             echo "$RESPONSE"
+
+            # Verificar si hubo error en la respuesta de Facebook
+            ERROR=$(echo "$RESPONSE" | jq '.error // empty')
+            if [ -n "$ERROR" ]; then
+              echo "⚠️ Error fetching group $GROUP_ID: $ERROR"
+              ERRORS=$((ERRORS + 1))
+              echo "-----------------------------"
+              continue
+            fi
+
             COUNT=$(echo "$RESPONSE" | jq '.member_count // 0')
-            echo "👥 Members: $COUNT"
-            TOTAL=$((TOTAL + COUNT))
+
+            # Solo actualizar si el count es mayor a 0
+            if [ "$COUNT" -gt 0 ]; then
+              echo "👥 Members: $COUNT"
+
+              # Actualizar miembros_actuales en Supabase
+              UPDATE_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+                -X PATCH \
+                "${SUPABASE_URL}/rest/v1/facebook_groups?id_group=eq.${GROUP_ID}" \
+                -H "apikey: ${SUPABASE_KEY}" \
+                -H "Authorization: Bearer ${SUPABASE_KEY}" \
+                -H "Content-Type: application/json" \
+                -H "Prefer: return=minimal" \
+                -d "{\"miembros_actuales\": ${COUNT}}")
+
+              if [ "$UPDATE_RESPONSE" = "204" ]; then
+                echo "✅ Updated in Supabase"
+                UPDATED=$((UPDATED + 1))
+              else
+                echo "❌ Failed to update Supabase (HTTP $UPDATE_RESPONSE)"
+                ERRORS=$((ERRORS + 1))
+              fi
+
+              TOTAL=$((TOTAL + COUNT))
+            else
+              echo "⚠️ Skipping update for group $GROUP_ID (count = 0)"
+            fi
+
             echo "-----------------------------"
           done < group_ids.txt
+
           echo "============================="
           echo "📊 TOTAL MEMBERS: $TOTAL"
+          echo "✅ UPDATED: $UPDATED groups"
+          echo "❌ ERRORS: $ERRORS groups"
           echo "============================="
