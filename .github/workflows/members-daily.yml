@@ -1,4 +1,4 @@
-- name: Fetch Facebook Group Members and Update Supabase
+- name: Miembros Inicio del Dia
         env:
           FACEBOOK_TOKEN: ${{ secrets.FACEBOOK_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
