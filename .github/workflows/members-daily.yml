@@ -1,4 +1,4 @@
-- name: Miembros Inicio del Dia
+name: Inicio del dia
         env:
           FACEBOOK_TOKEN: ${{ secrets.FACEBOOK_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
