@@ -1,86 +1,121 @@
 name: Facebook Group Members Counter
-
 on:
   schedule:
     - cron: "0 */6 * * *"
   workflow_dispatch:
-
 jobs:
   count-members:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
-
       - name: Fetch Facebook Group Members
         env:
           FACEBOOK_TOKEN: ${{ secrets.FACEBOOK_TOKEN }}
         run: |
           echo "🔎 Starting Facebook Groups member count..."
-
           TOTAL=0
 
-          echo "-----------------------------"
-          echo "📦 Group: 8481964255255929"
-          R1=$(curl -s "https://graph.facebook.com/v25.0/8481964255255929?fields=member_count&access_token=${FACEBOOK_TOKEN}")
-          echo "$R1"
-          C1=$(echo "$R1" | jq '.member_count // 0')
-          echo "👥 Members: $C1"
-          TOTAL=$((TOTAL + C1))
+          GROUPS=(
+            "cubanosenflorida1"
+            "8856301654435091"
+            "8481964255255929"
+            "cubanosennicaragua1"
+            "6166833830005702"
+            "5111591572270244"
+            "2938946762934546"
+            "revolicoenlahabanacu"
+            "cubanosencdmx1"
+            "ventasvueloscubanicaragua1"
+            "cubanosenwestpalm"
+            "compradedivisasholguin"
+            "cubanosenmexico11"
+            "1793848928019756"
+            "1710355106466724"
+            "cubanosenestadosunido"
+            "cubanosenmexicodf"
+            "1669575096953824"
+            "1638163006763331"
+            "1586579855232010"
+            "1475292780033710"
+            "cubanosenuruguay1"
+            "1447313812632874"
+            "1393590281134164"
+            "cubanosentapachula"
+            "1250722932600050"
+            "1200494574644363"
+            "1196671070795170"
+            "cubanosenmontevideo1"
+            "1192059578753923"
+            "cubanosenlouisville1"
+            "1131940885160919"
+            "cubanosencalifornia1"
+            "1099280141817883"
+            "cubanosenpuebla"
+            "1078984147279844"
+            "cubanosenorlando1"
+            "cubanosentampa"
+            "1045885620427058"
+            "1042739023970914"
+            "ciberseguridadcuba"
+            "999020703807085"
+            "cubanosentoronto1"
+            "cubanosencancun1"
+            "907496870991545"
+            "863786915709008"
+            "860252276064532"
+            "857947516509744"
+            "839944551318267"
+            "cubanosenciudaddemexico1"
+            "cubanosenmiami2"
+            "tiendavirtualholguin"
+            "trabajoparacubanosenmiami1"
+            "583963487621974"
+            "568661464773769"
+            "566482719102207"
+            "556178317094936"
+            "545541007851013"
+            "536552832594558"
+            "526380219975366"
+            "497862709831151"
+            "481233711027273"
+            "480678754379552"
+            "449814127723696"
+            "440364635656790"
+            "434744529655372"
+            "419935192381004"
+            "cubanosencanada1"
+            "revolicosantaclara1"
+            "372602027276911"
+            "cubanosentexas1"
+            "revolicocompraventaholguin"
+            "cubanosenlasvegas1"
+            "cubanosenflorida2"
+            "325210957300002"
+            "cubanosenhouston1"
+            "285484860940817"
+            "cubanosenkentucky1"
+            "249366053545622"
+            "revolicocienfuegos1"
+            "2261107397601516"
+            "2163845177296476"
+            "1760352071445266"
+            "1710976649688975"
+            "1704354747044774"
+            "1985567971886403"
+          )
 
-          echo "-----------------------------"
-          echo "📦 Group: 8856301654435091"
-          R2=$(curl -s "https://graph.facebook.com/v25.0/8856301654435091?fields=member_count&access_token=${FACEBOOK_TOKEN}")
-          echo "$R2"
-          C2=$(echo "$R2" | jq '.member_count // 0')
-          echo "👥 Members: $C2"
-          TOTAL=$((TOTAL + C2))
-
-          echo "-----------------------------"
-          echo "📦 Group: 6166833830005702"
-          R3=$(curl -s "https://graph.facebook.com/v25.0/6166833830005702?fields=member_count&access_token=${FACEBOOK_TOKEN}")
-          echo "$R3"
-          C3=$(echo "$R3" | jq '.member_count // 0')
-          echo "👥 Members: $C3"
-          TOTAL=$((TOTAL + C3))
-
-          echo "-----------------------------"
-          echo "📦 Group: 5111591572270244"
-          R4=$(curl -s "https://graph.facebook.com/v25.0/5111591572270244?fields=member_count&access_token=${FACEBOOK_TOKEN}")
-          echo "$R4"
-          C4=$(echo "$R4" | jq '.member_count // 0')
-          echo "👥 Members: $C4"
-          TOTAL=$((TOTAL + C4))
-
-          echo "-----------------------------"
-          echo "📦 Group: 2938946762934546"
-          R5=$(curl -s "https://graph.facebook.com/v25.0/2938946762934546?fields=member_count&access_token=${FACEBOOK_TOKEN}")
-          echo "$R5"
-          C5=$(echo "$R5" | jq '.member_count // 0')
-          echo "👥 Members: $C5"
-          TOTAL=$((TOTAL + C5))
-
-          echo "-----------------------------"
-          echo "📦 Group: 1793848928019756"
-          R6=$(curl -s "https://graph.facebook.com/v25.0/1793848928019756?fields=member_count&access_token=${FACEBOOK_TOKEN}")
-          echo "$R6"
-          C6=$(echo "$R6" | jq '.member_count // 0')
-          echo "👥 Members: $C6"
-          TOTAL=$((TOTAL + C6))
-
-          echo "-----------------------------"
-          echo "📦 Group: 1710355106466724"
-          R6=$(curl -s "https://graph.facebook.com/v25.0/1710355106466724?fields=member_count&access_token=${FACEBOOK_TOKEN}")
-          echo "$R7"
-          C6=$(echo "$R7" | jq '.member_count // 0')
-          echo "👥 Members: $C7"
-          TOTAL=$((TOTAL + C7))
-
-          
+          for GROUP_ID in "${GROUPS[@]}"; do
+            echo "-----------------------------"
+            echo "📦 Group: $GROUP_ID"
+            RESPONSE=$(curl -s "https://graph.facebook.com/v25.0/${GROUP_ID}?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+            echo "$RESPONSE"
+            COUNT=$(echo "$RESPONSE" | jq '.member_count // 0')
+            echo "👥 Members: $COUNT"
+            TOTAL=$((TOTAL + COUNT))
+          done
 
           echo "============================="
           echo "📊 TOTAL MEMBERS: $TOTAL"
