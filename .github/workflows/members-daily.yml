@@ -1,4 +1,41 @@
-name: Inicio del dia
+name: Miembros de inicio del dia
+on:
+  schedule:
+    - cron: "1 4 * * *"
+  workflow_dispatch:
+jobs:
+  count-members:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Fetch Group IDs from Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          echo "📡 Fetching group IDs from Supabase..."
+          RESPONSE=$(curl -s \
+            "${SUPABASE_URL}/rest/v1/facebook_groups?select=id_group&limit=1000" \
+            -H "apikey: ${SUPABASE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_KEY}" \
+            -H "Content-Type: application/json" \
+            -H "Range: 0-999")
+          echo "Supabase response: $RESPONSE"
+          GROUP_IDS=$(echo "$RESPONSE" | jq -r '.[].id_group')
+          if [ -z "$GROUP_IDS" ]; then
+            echo "❌ No group IDs found in Supabase. Aborting."
+            exit 1
+          fi
+          echo "✅ Group IDs found:"
+          echo "$GROUP_IDS"
+          echo "$GROUP_IDS" > group_ids.txt
+
+      - name: Fetch Facebook Group Members and Update Supabase
         env:
           FACEBOOK_TOKEN: ${{ secrets.FACEBOOK_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -9,29 +46,22 @@ name: Inicio del dia
           UPDATED=0
           ERRORS=0
           echo "-----------------------------"
-
           while IFS= read -r GROUP_ID; do
             [ -z "$GROUP_ID" ] && continue
-
             echo "📦 Group: $GROUP_ID"
             RESPONSE=$(curl -s "https://graph.facebook.com/v25.0/${GROUP_ID}?fields=member_count&access_token=${FACEBOOK_TOKEN}")
             echo "$RESPONSE"
-
             ERROR=$(echo "$RESPONSE" | jq '.error // empty')
             if [ -n "$ERROR" ]; then
               echo "⚠️ Error fetching group $GROUP_ID: $ERROR"
               ERRORS=$((ERRORS + 1))
               echo "-----------------------------"
-              # Esperar 30 segundos si hay rate limit antes de continuar
               sleep 30
               continue
             fi
-
             COUNT=$(echo "$RESPONSE" | jq '.member_count // 0')
-
             if [ "$COUNT" -gt 0 ]; then
               echo "👥 Members: $COUNT"
-
               UPDATE_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
                 -X PATCH \
                 "${SUPABASE_URL}/rest/v1/facebook_groups?id_group=eq.${GROUP_ID}" \
@@ -40,7 +70,6 @@ name: Inicio del dia
                 -H "Content-Type: application/json" \
                 -H "Prefer: return=minimal" \
                 -d "{\"miembros_actuales\": ${COUNT}, \"miembros_inicio_dia\": ${COUNT}}")
-
               if [ "$UPDATE_RESPONSE" = "204" ]; then
                 echo "✅ Updated in Supabase"
                 UPDATED=$((UPDATED + 1))
@@ -48,18 +77,13 @@ name: Inicio del dia
                 echo "❌ Failed to update Supabase (HTTP $UPDATE_RESPONSE)"
                 ERRORS=$((ERRORS + 1))
               fi
-
               TOTAL=$((TOTAL + COUNT))
             else
               echo "⚠️ Skipping update for group $GROUP_ID (count = 0)"
             fi
-
             echo "-----------------------------"
-            # Esperar 2 segundos entre cada grupo para no saturar la API
             sleep 2
-
           done < group_ids.txt
-
           echo "============================="
           echo "📊 TOTAL MEMBERS: $TOTAL"
           echo "✅ UPDATED: $UPDATED groups"
