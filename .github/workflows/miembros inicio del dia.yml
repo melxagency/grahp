@@ -1,5 +1,4 @@
-name: Actualizar_Miembros
-
+name: Miembros inicio del dia
 on:
   workflow_dispatch:
 
