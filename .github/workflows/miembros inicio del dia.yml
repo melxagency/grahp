@@ -82,7 +82,7 @@ jobs:
               echo "⚠️ Skipping update for group $GROUP_ID (count = 0)"
             fi
             echo "-----------------------------"
-            sleep 2
+            sleep 1
           done < group_ids.txt
           echo "============================="
           echo "📊 TOTAL MEMBERS: $TOTAL"
