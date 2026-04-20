@@ -70,7 +70,7 @@ jobs:
                 -H "Authorization: Bearer ${SUPABASE_KEY}" \
                 -H "Content-Type: application/json" \
                 -H "Prefer: return=minimal" \
-                -d "{\"miembros_inicio_semana\": ${COUNT}, \"miembros_actuales\": ${COUNT}}")
+                -d "{\"miembros_inicio_semana\": ${COUNT}}")
               if [ "$UPDATE_RESPONSE" = "204" ]; then
                 echo "✅ Updated miembros_inicio_mes in Supabase"
                 UPDATED=$((UPDATED + 1))
@@ -83,7 +83,7 @@ jobs:
               echo "⚠️ Skipping update for group $GROUP_ID (count = 0)"
             fi
             echo "-----------------------------"
-            sleep 5
+            sleep 1
           done < group_ids.txt
           echo "============================="
           echo "📊 TOTAL MEMBERS: $TOTAL"
