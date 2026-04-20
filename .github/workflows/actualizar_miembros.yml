@@ -37,7 +37,7 @@ jobs:
             > groups.json
 
       # =========================
-      # 4. FETCH FACEBOOK DATA
+      # 4. FETCH FACEBOOK DATA (SKIP ZERO VALUES)
       # =========================
       - name: Fetch Facebook data
         env:
@@ -59,8 +59,13 @@ jobs:
 
             echo "👥 $COUNT"
 
-            RESULT=$(echo "$RESULT" | jq --arg id "$GROUP_ID" --argjson count "$COUNT" \
-              '. + [{"id_group": ($id | tonumber), "miembros_actuales": $count}]')
+            # 🚨 SOLO agregar si COUNT > 0
+            if [ "$COUNT" -gt 0 ]; then
+              RESULT=$(echo "$RESULT" | jq --arg id "$GROUP_ID" --argjson count "$COUNT" \
+                '. + [{"id_group": ($id | tonumber), "miembros_actuales": $count}]')
+            else
+              echo "⚠️ Skipping group (count = 0)"
+            fi
           done
 
           echo "$RESULT" > update_payload.json
@@ -73,7 +78,7 @@ jobs:
           jq -c '.' update_payload.json > payload_clean.json
 
       # =========================
-      # 6. SEND TO SUPABASE EDGE FUNCTION (NO RPC)
+      # 6. SEND TO SUPABASE EDGE FUNCTION
       # =========================
       - name: Send update to Edge Function
         env:
