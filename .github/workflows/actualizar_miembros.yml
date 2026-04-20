@@ -21,7 +21,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y jq
 
       # =========================
-      # 3. FETCH GROUP IDS
+      # 3. FETCH GROUPS FROM SUPABASE
       # =========================
       - name: Fetch Group IDs from Supabase
         env:
@@ -30,15 +30,14 @@ jobs:
         run: |
           echo "📡 Fetching group IDs..."
 
-          RESPONSE=$(curl -s \
+          curl -s \
             "${SUPABASE_URL}/rest/v1/facebook_groups?select=id_group&limit=1000" \
             -H "apikey: ${SUPABASE_KEY}" \
-            -H "Authorization: Bearer ${SUPABASE_KEY}")
-
-          echo "$RESPONSE" > groups.json
+            -H "Authorization: Bearer ${SUPABASE_KEY}" \
+            > groups.json
 
       # =========================
-      # 4. PROCESS FACEBOOK DATA
+      # 4. FETCH FACEBOOK DATA
       # =========================
       - name: Fetch Facebook data
         env:
@@ -49,15 +48,14 @@ jobs:
           RESULT="[]"
 
           for row in $(jq -c '.[]' groups.json); do
-            GROUP_ID=$(echo $row | jq -r '.id_group')
+            GROUP_ID=$(echo "$row" | jq -r '.id_group')
 
             echo "📦 Group: $GROUP_ID"
 
             RESPONSE=$(curl -s \
               "https://graph.facebook.com/v25.0/${GROUP_ID}?fields=member_count&access_token=${FACEBOOK_TOKEN}")
 
-            # FIX: parsing seguro
-            COUNT=$(echo "$RESPONSE" | jq -r '.member_count // 0' | tr -d '"')
+            COUNT=$(echo "$RESPONSE" | jq -r '.member_count // 0')
 
             echo "👥 $COUNT"
 
@@ -68,9 +66,9 @@ jobs:
           echo "$RESULT" > update_payload.json
 
       # =========================
-      # 5. CLEAN JSON (CRÍTICO)
+      # 5. CLEAN JSON
       # =========================
-      - name: Clean payload
+      - name: Clean JSON payload
         run: |
           jq -c '.' update_payload.json > payload_clean.json
 
@@ -89,6 +87,7 @@ jobs:
             -H "apikey: ${SUPABASE_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_KEY}" \
             -H "Content-Type: application/json" \
-            -d @payload_clean.json
+            -d @payload_clean.json \
+            --fail-with-body
 
           echo "✅ Bulk update completed"
