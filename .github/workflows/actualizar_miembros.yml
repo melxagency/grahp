@@ -73,7 +73,7 @@ jobs:
           jq -c '.' update_payload.json > payload_clean.json
 
       # =========================
-      # 6. UPDATE SUPABASE (EDGE FUNCTION BULK)
+      # 6. BULK UPDATE SUPABASE
       # =========================
       - name: Send bulk update
         env:
@@ -91,7 +91,7 @@ jobs:
           echo "✅ Bulk update completed"
 
       # =========================
-      # 7. SEND TELEGRAM REPORT
+      # 7. SEND TELEGRAM REPORT (WITH FILE NAME)
       # =========================
       - name: Send Telegram report
         env:
@@ -99,10 +99,14 @@ jobs:
         run: |
           echo "📨 Sending report..."
 
+          FILE_NAME="reporte_miembros_$(date +'%Y-%m-%d').pdf"
+
+          echo "📄 PDF name: $FILE_NAME"
+
           curl -s -X POST \
             "https://cqwdrsxcylkvlscvggwt.supabase.co/functions/v1/telegram-notify" \
             -H "Authorization: Bearer ${SUPABASE_KEY}" \
             -H "Content-Type: application/json" \
-            -d '{}'
+            -d "{\"fileName\":\"$FILE_NAME\"}"
 
           echo "✅ Report sent"
