@@ -1,6 +1,5 @@
-name: Miembros de inicio del dia
+name: Actualizar_Miembros
 on:
-
   workflow_dispatch:
 jobs:
   count-members:
