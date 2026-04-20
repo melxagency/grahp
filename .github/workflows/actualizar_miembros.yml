@@ -73,23 +73,19 @@ jobs:
           jq -c '.' update_payload.json > payload_clean.json
 
       # =========================
-      # 6. BULK UPDATE SUPABASE (FIX DEFINITIVO)
+      # 6. SEND TO SUPABASE EDGE FUNCTION (NO RPC)
       # =========================
-      - name: Update Supabase (ONE REQUEST ONLY)
+      - name: Send update to Edge Function
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          echo "🚀 Sending bulk update..."
-
-          PAYLOAD=$(cat payload_clean.json)
+          echo "🚀 Sending to Edge Function..."
 
           curl -s -X POST \
-            "${SUPABASE_URL}/rest/v1/rpc/bulk_update_members" \
-            -H "apikey: ${SUPABASE_KEY}" \
+            "${SUPABASE_URL}/functions/v1/bulk-update-members" \
             -H "Authorization: Bearer ${SUPABASE_KEY}" \
             -H "Content-Type: application/json" \
-            --data-binary "$PAYLOAD" \
-            --fail-with-body
+            -d @payload_clean.json
 
-          echo "✅ Bulk update completed"
+          echo "✅ Update completed"
