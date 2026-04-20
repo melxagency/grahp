@@ -8,14 +8,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # =========================
+      # 1. CHECKOUT
+      # =========================
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # =========================
+      # 2. INSTALL TOOLS
+      # =========================
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
       # =========================
-      # 1. FETCH GROUP IDS
+      # 3. FETCH GROUP IDS
       # =========================
       - name: Fetch Group IDs from Supabase
         env:
@@ -23,15 +29,16 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
           echo "📡 Fetching group IDs..."
+
           RESPONSE=$(curl -s \
-            "${SUPABASE_URL}/rest/v1/facebook_groups?select=id_group,miembros_actuales&limit=1000" \
+            "${SUPABASE_URL}/rest/v1/facebook_groups?select=id_group&limit=1000" \
             -H "apikey: ${SUPABASE_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_KEY}")
 
           echo "$RESPONSE" > groups.json
 
       # =========================
-      # 2. PROCESS FACEBOOK DATA (NO UPDATE YET)
+      # 4. PROCESS FACEBOOK DATA
       # =========================
       - name: Fetch Facebook data
         env:
@@ -46,20 +53,29 @@ jobs:
 
             echo "📦 Group: $GROUP_ID"
 
-            RESPONSE=$(curl -s "https://graph.facebook.com/v25.0/${GROUP_ID}?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+            RESPONSE=$(curl -s \
+              "https://graph.facebook.com/v25.0/${GROUP_ID}?fields=member_count&access_token=${FACEBOOK_TOKEN}")
 
-            COUNT=$(echo "$RESPONSE" | jq '.member_count // 0')
+            # FIX: parsing seguro
+            COUNT=$(echo "$RESPONSE" | jq -r '.member_count // 0' | tr -d '"')
 
             echo "👥 $COUNT"
 
-            RESULT=$(echo $RESULT | jq --arg id "$GROUP_ID" --argjson count "$COUNT" \
-              '. + [{"id_group": $id, "miembros_actuales": $count}]')
+            RESULT=$(echo "$RESULT" | jq --arg id "$GROUP_ID" --argjson count "$COUNT" \
+              '. + [{"id_group": ($id | tonumber), "miembros_actuales": $count}]')
           done
 
           echo "$RESULT" > update_payload.json
 
       # =========================
-      # 3. SINGLE BULK UPDATE (IMPORTANT CHANGE)
+      # 5. CLEAN JSON (CRÍTICO)
+      # =========================
+      - name: Clean payload
+        run: |
+          jq -c '.' update_payload.json > payload_clean.json
+
+      # =========================
+      # 6. BULK UPDATE SUPABASE
       # =========================
       - name: Update Supabase (ONE REQUEST ONLY)
         env:
@@ -68,14 +84,11 @@ jobs:
         run: |
           echo "🚀 Sending bulk update..."
 
-          PAYLOAD=$(cat update_payload.json)
-
-          # usamos RPC o endpoint batch (RECOMENDADO)
           curl -s -X POST \
             "${SUPABASE_URL}/rest/v1/rpc/bulk_update_members" \
             -H "apikey: ${SUPABASE_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_KEY}" \
             -H "Content-Type: application/json" \
-            -d "$PAYLOAD"
+            -d @payload_clean.json
 
           echo "✅ Bulk update completed"
