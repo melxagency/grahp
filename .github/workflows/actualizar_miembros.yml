@@ -73,7 +73,7 @@ jobs:
           jq -c '.' update_payload.json > payload_clean.json
 
       # =========================
-      # 6. BULK UPDATE SUPABASE
+      # 6. BULK UPDATE SUPABASE (FIX DEFINITIVO)
       # =========================
       - name: Update Supabase (ONE REQUEST ONLY)
         env:
@@ -82,12 +82,14 @@ jobs:
         run: |
           echo "🚀 Sending bulk update..."
 
+          PAYLOAD=$(cat payload_clean.json)
+
           curl -s -X POST \
             "${SUPABASE_URL}/rest/v1/rpc/bulk_update_members" \
             -H "apikey: ${SUPABASE_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_KEY}" \
             -H "Content-Type: application/json" \
-            -d @payload_clean.json \
+            --data-binary "$PAYLOAD" \
             --fail-with-body
 
           echo "✅ Bulk update completed"
