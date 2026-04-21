@@ -6,10 +6,10 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-// 🎯 CLIENTE POR DEFECTO
+// 🎯 CLIENTE
 const CLIENTE = "Puente Cargo";
 
-// 🔹 INSIGHTS
+// 📊 INSIGHTS
 async function getMetric(pageId, token, metric, since, until) {
   const url = `https://graph.facebook.com/v19.0/${pageId}/insights`;
 
@@ -28,7 +28,7 @@ async function getMetric(pageId, token, metric, since, until) {
   return values.reduce((sum, d) => sum + (d.value || 0), 0);
 }
 
-// 🔹 SHARES
+// 🔁 SHARES
 async function getTotalShares(pageId, token, since, until) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
   let totalShares = 0;
@@ -71,59 +71,64 @@ function getDays(start, end) {
 // 🚀 MAIN
 async function main() {
 
-  // 🔍 buscar páginas del cliente
+  // 🔍 páginas del cliente
   const { data, error } = await supabase
     .from("pages_clientes")
     .select("*")
     .eq("cliente", CLIENTE);
 
   if (error) {
-    console.error("Supabase error:", error);
+    console.error(error);
     return;
   }
 
   if (!data.length) {
-    console.log("No pages found for client");
+    console.log("No pages found");
     return;
   }
 
-  const id_reporte = Math.floor(Math.random() * 1e9);
+  // 🔥 ID REPORTE ÚNICO (SEGURO)
+  const id_reporte = Date.now() + Math.floor(Math.random() * 1000);
 
   const first = data[0];
   const days = getDays(first.fecha_inicio, first.fecha_termino);
 
   for (const day of days) {
 
+    // 🔥 FIX META API (rango válido)
+    const since = day;
+    const untilDate = new Date(day);
+    untilDate.setDate(untilDate.getDate() + 1);
+    const until = untilDate.toISOString().split("T")[0];
+
     let totalImpressions = 0;
     let totalEngagement = 0;
     let totalShares = 0;
 
     for (const row of data) {
-      const pageId = row.id_page;
-      const token = row.token_page;
 
       try {
         const impressions = await getMetric(
-          pageId,
-          token,
+          row.id_page,
+          row.token_page,
           "page_impressions_unique",
-          day,
-          day
+          since,
+          until
         );
 
         const engagement = await getMetric(
-          pageId,
-          token,
+          row.id_page,
+          row.token_page,
           "page_post_engagements",
-          day,
-          day
+          since,
+          until
         );
 
         const shares = await getTotalShares(
-          pageId,
-          token,
-          day,
-          day
+          row.id_page,
+          row.token_page,
+          since,
+          until
         );
 
         totalImpressions += impressions;
@@ -131,7 +136,7 @@ async function main() {
         totalShares += shares;
 
       } catch (err) {
-        console.error(`Error page ${pageId} ${day}:`, err.response?.data || err.message);
+        console.error(`Error page ${row.id_page} ${day}:`, err.response?.data || err.message);
       }
     }
 
@@ -144,10 +149,10 @@ async function main() {
       engagement_real
     });
 
-    // 💾 INSERT TOTAL POR DÍA
+    // 💾 UPSERT (evita duplicados)
     const { error: insertError } = await supabase
       .from("reportes")
-      .insert({
+      .upsert({
         id_reporte: id_reporte,
         fecha: day,
         cliente: CLIENTE,
@@ -164,6 +169,8 @@ async function main() {
 
         promedio_impresiones_post: 0,
         promedio_engagement_real_post: 0
+      }, {
+        onConflict: 'id_reporte, fecha'
       });
 
     if (insertError) {
