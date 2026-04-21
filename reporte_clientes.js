@@ -9,7 +9,7 @@ const supabase = createClient(
 // 🎯 CLIENTE POR DEFECTO
 const CLIENTE = "Puente Cargo";
 
-// 📊 INSIGHTS META
+// 📊 METRICAS META
 async function getMetric(pageId, token, metric, since, until) {
   const url = `https://graph.facebook.com/v19.0/${pageId}/insights`;
 
@@ -24,7 +24,6 @@ async function getMetric(pageId, token, metric, since, until) {
   });
 
   const values = res.data.data?.[0]?.values || [];
-
   return values.reduce((sum, d) => sum + (d.value || 0), 0);
 }
 
@@ -68,10 +67,10 @@ function getDays(start, end) {
   return days;
 }
 
-// 🚀 MAIN
+// 🔥 MAIN
 async function main() {
 
-  // 🔍 páginas del cliente
+  // 📌 páginas del cliente
   const { data, error } = await supabase
     .from("pages_clientes")
     .select("*")
@@ -88,14 +87,20 @@ async function main() {
   }
 
   const first = data[0];
+
+  // 📌 SUMA GLOBAL DE POSTS PROGRAMADOS
+  const post_diarios_total = data.reduce(
+    (sum, p) => sum + (p.post_programados_diarios || 0),
+    0
+  );
+
   const days = getDays(first.fecha_inicio, first.fecha_termino);
 
-  // 🔥 ID DE EJECUCIÓN (batch)
+  // 🔥 ID DE EJECUCIÓN (MISMO PARA TODO EL BATCH)
   const id_reporte = Date.now() + Math.floor(Math.random() * 1000);
 
   for (const day of days) {
 
-    // 🔥 FIX META API RANGE
     const since = day;
     const untilDate = new Date(day);
     untilDate.setDate(untilDate.getDate() + 1);
@@ -106,8 +111,8 @@ async function main() {
     let totalShares = 0;
 
     for (const row of data) {
-
       try {
+
         const impressions = await getMetric(
           row.id_page,
           row.token_page,
@@ -142,14 +147,24 @@ async function main() {
 
     const engagement_real = totalEngagement - totalShares;
 
+    // 📌 promedio por post (evita división por 0)
+    const totalPosts = post_diarios_total || 1;
+
+    const promedio_impresiones_post =
+      Number((totalImpressions / totalPosts).toFixed(4));
+
+    const promedio_engagement_real_post =
+      Number((engagement_real / totalPosts).toFixed(4));
+
     console.log(`TOTAL ${day}`, {
       totalImpressions,
       totalEngagement,
       totalShares,
-      engagement_real
+      engagement_real,
+      post_diarios_total
     });
 
-    // 💾 UPSERT (SIN DUPLICADOS)
+    // 💾 UPSERT FINAL
     const { error: insertError } = await supabase
       .from("reportes")
       .upsert(
@@ -164,11 +179,13 @@ async function main() {
           engagement: totalEngagement,
           engagement_real,
 
-          post_programados_diarios: first.post_programados_diarios || 0,
+          post_diarios: post_diarios_total,
+
           total_post: 0,
           total_real_post: 0,
-          promedio_impresiones_post: 0,
-          promedio_engagement_real_post: 0
+
+          promedio_impresiones_post,
+          promedio_engagement_real_post
         },
         {
           onConflict: "cliente, fecha"
