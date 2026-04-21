@@ -8,29 +8,28 @@ const supabase = createClient(
 
 const CLIENTE = "Puente Cargo";
 
-// 📊 META INSIGHTS
-async function getMetric(pageId, token, metric, since, until) {
-  const url = `https://graph.facebook.com/v19.0/${pageId}/insights`;
-
-  const res = await axios.get(url, {
-    params: {
-      metric,
-      period: "day",
-      since,
-      until,
-      access_token: token
+// 📊 METRICAS META (SERIE DIARIA)
+async function getMetricSeries(pageId, token, metric, since, until) {
+  const res = await axios.get(
+    `https://graph.facebook.com/v19.0/${pageId}/insights`,
+    {
+      params: {
+        metric,
+        period: "day",
+        since,
+        until,
+        access_token: token
+      }
     }
-  });
+  );
 
-  const values = res.data.data?.[0]?.values || [];
-
-  return values.reduce((sum, d) => sum + (d.value || 0), 0);
+  return res.data.data?.[0]?.values || [];
 }
 
-// 🔁 SHARES REALES
-async function getTotalShares(pageId, token, since, until) {
+// 🔁 SHARES POR POST (SERIE)
+async function getSharesSeries(pageId, token, since, until) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
-  let totalShares = 0;
+  const map = {};
 
   while (url) {
     const res = await axios.get(url, {
@@ -44,23 +43,24 @@ async function getTotalShares(pageId, token, since, until) {
     });
 
     for (const post of res.data.data || []) {
-      totalShares += post.shares?.count || 0;
+      const day = post.created_time.split("T")[0];
+      map[day] = (map[day] || 0) + (post.shares?.count || 0);
     }
 
     url = res.data.paging?.next || null;
   }
 
-  return totalShares;
+  return map;
 }
 
-// 📅 DÍAS
+// 📅 GENERAR DÍAS
 function getDays(start, end) {
   const days = [];
   let current = new Date(start);
   const last = new Date(end);
 
   while (current <= last) {
-    days.push(new Date(current).toISOString().split("T")[0]);
+    days.push(current.toISOString().split("T")[0]);
     current.setDate(current.getDate() + 1);
   }
 
@@ -74,112 +74,167 @@ async function main() {
     .select("*")
     .eq("cliente", CLIENTE);
 
-  if (error) return console.error(error);
-  if (!data.length) return console.log("Sin datos");
+  if (error) {
+    console.error("Supabase error:", error);
+    return;
+  }
+
+  if (!data.length) {
+    console.log("No data found");
+    return;
+  }
 
   const first = data[0];
   const days = getDays(first.fecha_inicio, first.fecha_termino);
 
-  // 🔥 ID batch único
+  // 🔥 ID GLOBAL DEL REPORTE
   const id_reporte = Date.now() + Math.floor(Math.random() * 1000);
 
-  // 🔢 total posts programados del cliente
   const post_diarios = data.reduce(
     (sum, p) => sum + (p.post_programados_diarios || 0),
     0
   );
 
-  for (const day of days) {
+  const daily = {};
 
-    const since = day;
-    const untilDate = new Date(day);
-    untilDate.setDate(untilDate.getDate() + 1);
-    const until = untilDate.toISOString().split("T")[0];
+  // =========================
+  // 📊 RECOLECCIÓN DE DATOS
+  // =========================
+  for (const row of data) {
+    try {
+      const impressionsSeries = await getMetricSeries(
+        row.id_page,
+        row.token_page,
+        "page_impressions_unique",
+        first.fecha_inicio,
+        first.fecha_termino
+      );
 
-    let totalImpressions = 0;
-    let totalEngagement = 0;
-    let totalShares = 0;
+      const engagementSeries = await getMetricSeries(
+        row.id_page,
+        row.token_page,
+        "page_post_engagements",
+        first.fecha_inicio,
+        first.fecha_termino
+      );
 
-    for (const row of data) {
-      try {
-        const impressions = await getMetric(
-          row.id_page,
-          row.token_page,
-          "page_impressions_unique",
-          since,
-          until
-        );
+      const sharesMap = await getSharesSeries(
+        row.id_page,
+        row.token_page,
+        first.fecha_inicio,
+        first.fecha_termino
+      );
 
-        const engagement = await getMetric(
-          row.id_page,
-          row.token_page,
-          "page_post_engagements",
-          since,
-          until
-        );
+      // 📌 agrupar impresiones
+      for (const item of impressionsSeries) {
+        const day = item.end_time.split("T")[0];
 
-        const shares = await getTotalShares(
-          row.id_page,
-          row.token_page,
-          since,
-          until
-        );
+        if (!daily[day]) {
+          daily[day] = { imp: 0, eng: 0, sha: 0 };
+        }
 
-        totalImpressions += impressions;
-        totalEngagement += engagement;
-        totalShares += shares;
-
-      } catch (err) {
-        console.error(`Error page ${row.id_page} ${day}:`, err.response?.data || err.message);
+        daily[day].imp += item.value || 0;
       }
+
+      // 📌 engagement
+      for (const item of engagementSeries) {
+        const day = item.end_time.split("T")[0];
+
+        if (!daily[day]) {
+          daily[day] = { imp: 0, eng: 0, sha: 0 };
+        }
+
+        daily[day].eng += item.value || 0;
+      }
+
+      // 📌 shares
+      for (const day in sharesMap) {
+        if (!daily[day]) {
+          daily[day] = { imp: 0, eng: 0, sha: 0 };
+        }
+
+        daily[day].sha += sharesMap[day];
+      }
+
+    } catch (err) {
+      console.error("ERROR PAGE:", row.id_page, err.response?.data || err.message);
     }
+  }
 
-    const engagement_real = totalEngagement - totalShares;
+  // =========================
+  // 💾 INSERT REPORTES
+  // =========================
+  for (const day of days) {
+    const d = daily[day] || { imp: 0, eng: 0, sha: 0 };
 
-    // 📊 PROMEDIOS
+    const engagement_real = d.eng - d.sha;
+
     const promedio_impresiones_post = Math.round(
-      post_diarios > 0 ? totalImpressions / post_diarios : 0
+      post_diarios ? d.imp / post_diarios : 0
     );
 
     const promedio_engagement_real_post = Number(
-      (post_diarios > 0 ? engagement_real / post_diarios : 0).toFixed(4)
+      (post_diarios ? engagement_real / post_diarios : 0).toFixed(4)
     );
 
-    console.log(`TOTAL ${day}`, {
-      totalImpressions,
-      totalEngagement,
-      totalShares,
+    console.log("TOTAL", day, {
+      totalImpressions: d.imp,
+      totalEngagement: d.eng,
+      totalShares: d.sha,
       engagement_real,
       post_diarios
     });
 
-    const { error: insertError } = await supabase
-      .from("reportes")
-      .upsert(
-        {
-          id_reporte,
-          fecha: day,
-          cliente: CLIENTE,
+    const { error } = await supabase.from("reportes").upsert(
+      {
+        id_reporte,
+        fecha: day,
+        cliente: CLIENTE,
 
-          Impresiones: totalImpressions,
-          reactions: 0,
-          shares: totalShares,
-          engagement: totalEngagement,
-          engagement_real,
+        Impresiones: d.imp,
+        reactions: 0,
+        shares: d.sha,
+        engagement: d.eng,
+        engagement_real,
 
-          post_diarios,
+        post_diarios,
 
-          promedio_impresiones_post,
-          promedio_engagement_real_post
-        },
-        {
-          onConflict: "cliente, fecha"
-        }
-      );
+        promedio_impresiones_post,
+        promedio_engagement_real_post
+      },
+      {
+        onConflict: "cliente, fecha"
+      }
+    );
 
-    if (insertError) {
-      console.error("INSERT ERROR:", insertError);
+    if (error) {
+      console.error("INSERT ERROR:", error);
     }
+  }
+
+  // =========================
+  // 🚀 EDGE FUNCTION (PDF + TELEGRAM)
+  // =========================
+  try {
+    const res = await axios.post(
+      "https://cqwdrsxcylkvlscvggwt.supabase.co/functions/v1/reporte_clientes",
+      {
+        id_reporte
+      },
+      {
+        headers: {
+          "Content-Type": "application/json"
+        }
+      }
+    );
+
+    console.log("📄 PDF EDGE FUNCTION OK:", res.data);
+
+  } catch (err) {
+    console.error(
+      "❌ EDGE FUNCTION ERROR:",
+      err.response?.data || err.message
+    );
   }
 }
 
