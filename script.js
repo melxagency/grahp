@@ -6,12 +6,13 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-async function getImpressions(pageId, token, since, until) {
+// 🔹 función genérica para métricas
+async function getMetric(pageId, token, metric, since, until) {
   const url = `https://graph.facebook.com/v19.0/${pageId}/insights`;
 
   const res = await axios.get(url, {
     params: {
-      metric: "page_impressions_unique",
+      metric,
       period: "day",
       since,
       until,
@@ -30,24 +31,67 @@ async function main() {
     .select("*");
 
   if (error) {
-    console.error(error);
+    console.error("Supabase error:", error);
     return;
   }
 
   for (const row of data) {
-    const total = await getImpressions(
-      row.id_page,
-      row.token_page,
-      row.fecha_inicio,
-      row.fecha_termino
-    );
+    const pageId = row.id_page;
+    const token = row.token_page;
+    const since = row.fecha_inicio;
+    const until = row.fecha_termino;
 
-    console.log(`Page ${row.id_page} -> ${total}`);
+    try {
+      // 📊 métricas Facebook
+      const impressions = await getMetric(
+        pageId,
+        token,
+        "page_impressions_unique",
+        since,
+        until
+      );
 
-    await supabase
-      .from("pages_clientes")
-      .update({ Impresiones: total })
-      .eq("id", row.id);
+      const reactions = await getMetric(
+        pageId,
+        token,
+        "page_actions_post_reactions_total",
+        since,
+        until
+      );
+
+      const comments = await getMetric(
+        pageId,
+        token,
+        "page_actions_post_comments_total",
+        since,
+        until
+      );
+
+      const engagement = await getMetric(
+        pageId,
+        token,
+        "page_post_engagements",
+        since,
+        until
+      );
+
+      console.log(`Page ${pageId}`);
+      console.log({ impressions, reactions, comments, engagement });
+
+      // 💾 update Supabase
+      await supabase
+        .from("pages_clientes")
+        .update({
+          Impresiones: impressions,
+          Reactions: reactions,
+          Comentarios: comments,
+          Engagement: engagement
+        })
+        .eq("id", row.id);
+
+    } catch (err) {
+      console.error(`Error page ${pageId}:`, err.response?.data || err.message);
+    }
   }
 }
 
