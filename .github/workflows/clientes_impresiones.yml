@@ -1,16 +1,16 @@
-name: Actualizar Clientes Impresiones
+name: Clientes_Insights
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 3 * * *"  # diario 3 AM
+    - cron: "0 3 * * *"
 
 jobs:
-  update-impressions:
+  update-metrics:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Setup Node
@@ -25,5 +25,4 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          FACEBOOK_TOKEN: ${{ secrets.FACEBOOK_TOKEN }}
         run: node script.js
