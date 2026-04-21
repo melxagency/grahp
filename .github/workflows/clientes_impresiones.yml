@@ -1,0 +1,29 @@
+name: Actualizar Clientes Impresiones
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"  # diario 3 AM
+
+jobs:
+  update-impressions:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install axios @supabase/supabase-js
+
+      - name: Run script
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          FACEBOOK_TOKEN: ${{ secrets.FACEBOOK_TOKEN }}
+        run: node script.js
