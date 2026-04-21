@@ -6,7 +6,7 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-// 🔹 función genérica de métricas
+// 🔹 INSIGHTS (Meta agregados)
 async function getMetric(pageId, token, metric, since, until) {
   const url = `https://graph.facebook.com/v19.0/${pageId}/insights`;
 
@@ -25,6 +25,35 @@ async function getMetric(pageId, token, metric, since, until) {
   return values.reduce((sum, d) => sum + (d.value || 0), 0);
 }
 
+// 🔹 SHARES REALES DESDE POSTS
+async function getTotalShares(pageId, token, since, until) {
+  let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
+  let totalShares = 0;
+
+  while (url) {
+    const res = await axios.get(url, {
+      params: {
+        fields: "shares,created_time",
+        since,
+        until,
+        limit: 100,
+        access_token: token
+      }
+    });
+
+    const posts = res.data.data || [];
+
+    for (const post of posts) {
+      totalShares += post.shares?.count || 0;
+    }
+
+    url = res.data.paging?.next || null;
+  }
+
+  return totalShares;
+}
+
+// 🔥 MAIN
 async function main() {
   const { data, error } = await supabase
     .from("pages_clientes")
@@ -42,19 +71,11 @@ async function main() {
     const until = row.fecha_termino;
 
     try {
-      // 📊 SOLO MÉTRICAS ESTABLES
+      // 📊 INSIGHTS
       const impressions = await getMetric(
         pageId,
         token,
         "page_impressions_unique",
-        since,
-        until
-      );
-
-      const engagement = await getMetric(
-        pageId,
-        token,
-        "page_post_engagements",
         since,
         until
       );
@@ -67,10 +88,27 @@ async function main() {
         until
       );
 
+      const engagement = await getMetric(
+        pageId,
+        token,
+        "page_post_engagements",
+        since,
+        until
+      );
+
+      // 🔁 SHARES REALES
+      const shares = await getTotalShares(
+        pageId,
+        token,
+        since,
+        until
+      );
+
       console.log(`Page ${pageId}`, {
         impressions,
         reactions,
-        engagement
+        engagement,
+        shares
       });
 
       // 💾 UPDATE SUPABASE
@@ -79,7 +117,8 @@ async function main() {
         .update({
           Impresiones: impressions,
           reactions: reactions,
-          engagement: engagement
+          engagement: engagement,
+          shares: shares
         })
         .eq("id", row.id);
 
