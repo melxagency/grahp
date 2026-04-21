@@ -6,7 +6,7 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-// 🔹 INSIGHTS (Meta agregados)
+// 📊 INSIGHTS GENERALES
 async function getMetric(pageId, token, metric, since, until) {
   const url = `https://graph.facebook.com/v19.0/${pageId}/insights`;
 
@@ -25,7 +25,7 @@ async function getMetric(pageId, token, metric, since, until) {
   return values.reduce((sum, d) => sum + (d.value || 0), 0);
 }
 
-// 🔹 SHARES REALES DESDE POSTS
+// 🔁 SHARES REALES (POSTS)
 async function getTotalShares(pageId, token, since, until) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
   let totalShares = 0;
@@ -41,9 +41,7 @@ async function getTotalShares(pageId, token, since, until) {
       }
     });
 
-    const posts = res.data.data || [];
-
-    for (const post of posts) {
+    for (const post of res.data.data || []) {
       totalShares += post.shares?.count || 0;
     }
 
@@ -53,7 +51,7 @@ async function getTotalShares(pageId, token, since, until) {
   return totalShares;
 }
 
-// 🔥 MAIN
+// 🚀 MAIN
 async function main() {
   const { data, error } = await supabase
     .from("pages_clientes")
@@ -80,6 +78,14 @@ async function main() {
         until
       );
 
+      const engagement = await getMetric(
+        pageId,
+        token,
+        "page_post_engagements",
+        since,
+        until
+      );
+
       const reactions = await getMetric(
         pageId,
         token,
@@ -88,10 +94,10 @@ async function main() {
         until
       );
 
-      const engagement = await getMetric(
+      const clicks = await getMetric(
         pageId,
         token,
-        "page_post_engagements",
+        "page_consumptions",
         since,
         until
       );
@@ -104,11 +110,16 @@ async function main() {
         until
       );
 
+      // 🧠 ENGAGEMENT REAL
+      const engagement_real = engagement - shares;
+
       console.log(`Page ${pageId}`, {
         impressions,
         reactions,
         engagement,
-        shares
+        shares,
+        clicks,
+        engagement_real
       });
 
       // 💾 UPDATE SUPABASE
@@ -118,7 +129,9 @@ async function main() {
           Impresiones: impressions,
           reactions: reactions,
           engagement: engagement,
-          shares: shares
+          shares: shares,
+          clicks: clicks,
+          engagement_real: engagement_real
         })
         .eq("id", row.id);
 
