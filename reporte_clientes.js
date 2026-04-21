@@ -9,7 +9,7 @@ const supabase = createClient(
 const CLIENTE = "Puente Cargo";
 
 // =========================
-// 📊 METRICAS (SERIE DIARIA)
+// 📊 METRICAS META
 // =========================
 async function getMetricSeries(pageId, token, metric, since, until) {
   const res = await axios.get(
@@ -29,13 +29,13 @@ async function getMetricSeries(pageId, token, metric, since, until) {
 }
 
 // =========================
-// 🔥 POSTS + REACTIONS + SHARES (CORRECTO)
+// 🔥 POSTS + REACTIONS (FIX REAL)
 // =========================
 async function getPostStats(pageId, token, since, until) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
 
-  const sharesMap = {};
   const reactionsMap = {};
+  const sharesMap = {};
 
   const posts = [];
 
@@ -55,7 +55,7 @@ async function getPostStats(pageId, token, since, until) {
     url = res.data.paging?.next || null;
   }
 
-  // 2. reactions por post (CORRECTO)
+  // 2. reactions reales por post (CORRECTO + COMPLETO)
   await Promise.all(
     posts.map(async (post) => {
       try {
@@ -63,7 +63,15 @@ async function getPostStats(pageId, token, since, until) {
           `https://graph.facebook.com/v19.0/${post.id}`,
           {
             params: {
-              fields: "reactions.summary(true)",
+              fields: `
+                reactions.type(LIKE).summary(true).limit(0),
+                reactions.type(LOVE).summary(true).limit(0),
+                reactions.type(WOW).summary(true).limit(0),
+                reactions.type(HAHA).summary(true).limit(0),
+                reactions.type(SAD).summary(true).limit(0),
+                reactions.type(ANGRY).summary(true).limit(0),
+                shares
+              `,
               access_token: token
             }
           }
@@ -72,12 +80,12 @@ async function getPostStats(pageId, token, since, until) {
         const day = post.created_time.split("T")[0];
 
         const reactions =
-          r.data?.reactions?.summary?.total_count || 0;
+          (r.data.reactions?.summary?.total_count || 0);
 
         const shares = post.shares?.count || 0;
 
-        sharesMap[day] = (sharesMap[day] || 0) + shares;
         reactionsMap[day] = (reactionsMap[day] || 0) + reactions;
+        sharesMap[day] = (sharesMap[day] || 0) + shares;
 
       } catch (err) {
         console.error("POST ERROR:", post.id, err.message);
@@ -85,7 +93,7 @@ async function getPostStats(pageId, token, since, until) {
     })
   );
 
-  return { sharesMap, reactionsMap };
+  return { reactionsMap, sharesMap };
 }
 
 // =========================
@@ -147,7 +155,7 @@ async function main() {
         first.fecha_termino
       );
 
-      const { sharesMap, reactionsMap } = await getPostStats(
+      const { reactionsMap, sharesMap } = await getPostStats(
         row.id_page,
         row.token_page,
         first.fecha_inicio,
@@ -168,16 +176,16 @@ async function main() {
         daily[day].eng += item.value || 0;
       }
 
-      // shares
-      for (const day in sharesMap) {
-        if (!daily[day]) daily[day] = { imp: 0, eng: 0, sha: 0, rea: 0 };
-        daily[day].sha += sharesMap[day];
-      }
-
       // reactions
       for (const day in reactionsMap) {
         if (!daily[day]) daily[day] = { imp: 0, eng: 0, sha: 0, rea: 0 };
         daily[day].rea += reactionsMap[day];
+      }
+
+      // shares
+      for (const day in sharesMap) {
+        if (!daily[day]) daily[day] = { imp: 0, eng: 0, sha: 0, rea: 0 };
+        daily[day].sha += sharesMap[day];
       }
 
     } catch (err) {
@@ -206,8 +214,7 @@ async function main() {
       eng: d.eng,
       shares: d.sha,
       reactions: d.rea,
-      engagement_real,
-      post_diarios
+      engagement_real
     });
 
     const { error } = await supabase.from("reportes").upsert(
@@ -217,7 +224,7 @@ async function main() {
         cliente: CLIENTE,
 
         Impresiones: d.imp,
-        reactions: d.rea,   // ✔ YA FUNCIONA
+        reactions: d.rea,   // ✅ YA REAL
         shares: d.sha,
         engagement: d.eng,
         engagement_real,
@@ -243,7 +250,7 @@ async function main() {
       { headers: { "Content-Type": "application/json" } }
     );
 
-    console.log("📄 PDF GENERADO OK");
+    console.log("📄 PDF OK");
   } catch (err) {
     console.error("EDGE ERROR:", err.message);
   }
