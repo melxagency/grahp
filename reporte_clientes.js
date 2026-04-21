@@ -6,10 +6,9 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-// 🎯 CLIENTE
 const CLIENTE = "Puente Cargo";
 
-// 📊 METRICA META
+// 📊 META INSIGHTS
 async function getMetric(pageId, token, metric, since, until) {
   const url = `https://graph.facebook.com/v19.0/${pageId}/insights`;
 
@@ -24,6 +23,7 @@ async function getMetric(pageId, token, metric, since, until) {
   });
 
   const values = res.data.data?.[0]?.values || [];
+
   return values.reduce((sum, d) => sum + (d.value || 0), 0);
 }
 
@@ -69,28 +69,25 @@ function getDays(start, end) {
 
 // 🚀 MAIN
 async function main() {
-
   const { data, error } = await supabase
     .from("pages_clientes")
     .select("*")
     .eq("cliente", CLIENTE);
 
-  if (error) {
-    console.error("Supabase error:", error);
-    return;
-  }
+  if (error) return console.error(error);
+  if (!data.length) return console.log("Sin datos");
 
   const first = data[0];
+  const days = getDays(first.fecha_inicio, first.fecha_termino);
 
-  // 📌 POSTS TOTALES PROGRAMADOS
+  // 🔥 ID batch único
+  const id_reporte = Date.now() + Math.floor(Math.random() * 1000);
+
+  // 🔢 total posts programados del cliente
   const post_diarios = data.reduce(
     (sum, p) => sum + (p.post_programados_diarios || 0),
     0
   );
-
-  const days = getDays(first.fecha_inicio, first.fecha_termino);
-
-  const id_reporte = Date.now() + Math.floor(Math.random() * 1000);
 
   for (const day of days) {
 
@@ -105,7 +102,6 @@ async function main() {
 
     for (const row of data) {
       try {
-
         const impressions = await getMetric(
           row.id_page,
           row.token_page,
@@ -129,9 +125,9 @@ async function main() {
           until
         );
 
-        totalImpressions += Number(impressions || 0);
-        totalEngagement += Number(engagement || 0);
-        totalShares += Number(shares || 0);
+        totalImpressions += impressions;
+        totalEngagement += engagement;
+        totalShares += shares;
 
       } catch (err) {
         console.error(`Error page ${row.id_page} ${day}:`, err.response?.data || err.message);
@@ -140,14 +136,14 @@ async function main() {
 
     const engagement_real = totalEngagement - totalShares;
 
-    // 🔥 PROMEDIOS 100% ENTEROS
-    const safePosts = parseInt(post_diarios || 1);
+    // 📊 PROMEDIOS
+    const promedio_impresiones_post = Math.round(
+      post_diarios > 0 ? totalImpressions / post_diarios : 0
+    );
 
-    const promedio_impresiones_post =
-      Math.round(totalImpressions / safePosts);
-
-    const promedio_engagement_real_post =
-      Math.round(engagement_real / safePosts);
+    const promedio_engagement_real_post = Number(
+      (post_diarios > 0 ? engagement_real / post_diarios : 0).toFixed(4)
+    );
 
     console.log(`TOTAL ${day}`, {
       totalImpressions,
@@ -157,7 +153,6 @@ async function main() {
       post_diarios
     });
 
-    // 💾 INSERT SAFE
     const { error: insertError } = await supabase
       .from("reportes")
       .upsert(
