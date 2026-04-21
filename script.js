@@ -25,6 +25,35 @@ async function getMetric(pageId, token, metric, since, until) {
   return values.reduce((sum, d) => sum + (d.value || 0), 0);
 }
 
+// 🔥 CLICK FIX (CORRECTO)
+async function getClicks(pageId, token, since, until) {
+  const url = `https://graph.facebook.com/v19.0/${pageId}/insights`;
+
+  const res = await axios.get(url, {
+    params: {
+      metric: "page_consumptions_by_type",
+      period: "day",
+      since,
+      until,
+      access_token: token
+    }
+  });
+
+  const values = res.data.data?.[0]?.values || [];
+
+  let totalClicks = 0;
+
+  for (const day of values) {
+    const value = day.value || {};
+
+    for (const key in value) {
+      totalClicks += value[key] || 0;
+    }
+  }
+
+  return totalClicks;
+}
+
 // 🔁 SHARES REALES (POSTS)
 async function getTotalShares(pageId, token, since, until) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
@@ -94,10 +123,10 @@ async function main() {
         until
       );
 
-      const clicks = await getMetric(
+      // 🔥 CLICK CORREGIDO
+      const clicks = await getClicks(
         pageId,
         token,
-        "page_consumptions",
         since,
         until
       );
