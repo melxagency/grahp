@@ -9,7 +9,7 @@ const supabase = createClient(
 const CLIENTE = "Puente Cargo";
 
 // =========================
-// 📊 METRICAS SERIE
+// 📊 METRICAS (SERIE DIARIA)
 // =========================
 async function getMetricSeries(pageId, token, metric, since, until) {
   const res = await axios.get(
@@ -29,7 +29,7 @@ async function getMetricSeries(pageId, token, metric, since, until) {
 }
 
 // =========================
-// 🔥 SHARES + REACTIONS POR POST (OPTIMIZADO)
+// 🔥 POSTS + REACTIONS + SHARES (CORRECTO)
 // =========================
 async function getPostStats(pageId, token, since, until) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
@@ -37,10 +37,13 @@ async function getPostStats(pageId, token, since, until) {
   const sharesMap = {};
   const reactionsMap = {};
 
+  const posts = [];
+
+  // 1. traer posts
   while (url) {
     const res = await axios.get(url, {
       params: {
-        fields: "created_time,shares,reactions.summary(true)",
+        fields: "id,created_time,shares",
         since,
         until,
         limit: 100,
@@ -48,20 +51,39 @@ async function getPostStats(pageId, token, since, until) {
       }
     });
 
-    for (const post of res.data.data || []) {
-      const day = post.created_time.split("T")[0];
-
-      const shares = post.shares?.count || 0;
-
-      const reactions =
-        post.reactions?.summary?.total_count || 0;
-
-      sharesMap[day] = (sharesMap[day] || 0) + shares;
-      reactionsMap[day] = (reactionsMap[day] || 0) + reactions;
-    }
-
+    posts.push(...(res.data.data || []));
     url = res.data.paging?.next || null;
   }
+
+  // 2. reactions por post (CORRECTO)
+  await Promise.all(
+    posts.map(async (post) => {
+      try {
+        const r = await axios.get(
+          `https://graph.facebook.com/v19.0/${post.id}`,
+          {
+            params: {
+              fields: "reactions.summary(true)",
+              access_token: token
+            }
+          }
+        );
+
+        const day = post.created_time.split("T")[0];
+
+        const reactions =
+          r.data?.reactions?.summary?.total_count || 0;
+
+        const shares = post.shares?.count || 0;
+
+        sharesMap[day] = (sharesMap[day] || 0) + shares;
+        reactionsMap[day] = (reactionsMap[day] || 0) + reactions;
+
+      } catch (err) {
+        console.error("POST ERROR:", post.id, err.message);
+      }
+    })
+  );
 
   return { sharesMap, reactionsMap };
 }
@@ -105,7 +127,7 @@ async function main() {
   const daily = {};
 
   // =========================
-  // 📊 DATA FETCH
+  // 📊 RECOLECCIÓN
   // =========================
   for (const row of data) {
     try {
@@ -132,11 +154,10 @@ async function main() {
         first.fecha_termino
       );
 
-      // impressions
+      // impresiones
       for (const item of impressionsSeries) {
         const day = item.end_time.split("T")[0];
         if (!daily[day]) daily[day] = { imp: 0, eng: 0, sha: 0, rea: 0 };
-
         daily[day].imp += item.value || 0;
       }
 
@@ -144,28 +165,28 @@ async function main() {
       for (const item of engagementSeries) {
         const day = item.end_time.split("T")[0];
         if (!daily[day]) daily[day] = { imp: 0, eng: 0, sha: 0, rea: 0 };
-
         daily[day].eng += item.value || 0;
       }
 
-      // shares + reactions
+      // shares
       for (const day in sharesMap) {
         if (!daily[day]) daily[day] = { imp: 0, eng: 0, sha: 0, rea: 0 };
         daily[day].sha += sharesMap[day];
       }
 
+      // reactions
       for (const day in reactionsMap) {
         if (!daily[day]) daily[day] = { imp: 0, eng: 0, sha: 0, rea: 0 };
         daily[day].rea += reactionsMap[day];
       }
 
     } catch (err) {
-      console.error("ERROR PAGE:", err.message);
+      console.error("PAGE ERROR:", err.message);
     }
   }
 
   // =========================
-  // 💾 UPSERT
+  // 💾 INSERT
   // =========================
   for (const day of days) {
     const d = daily[day] || { imp: 0, eng: 0, sha: 0, rea: 0 };
@@ -196,7 +217,7 @@ async function main() {
         cliente: CLIENTE,
 
         Impresiones: d.imp,
-        reactions: d.rea, // ✅ AHORA REAL
+        reactions: d.rea,   // ✔ YA FUNCIONA
         shares: d.sha,
         engagement: d.eng,
         engagement_real,
@@ -206,16 +227,14 @@ async function main() {
         promedio_impresiones_post,
         promedio_engagement_real_post
       },
-      {
-        onConflict: "cliente, fecha"
-      }
+      { onConflict: "cliente, fecha" }
     );
 
     if (error) console.error("INSERT ERROR:", error);
   }
 
   // =========================
-  // EDGE FUNCTION PDF
+  // 🚀 EDGE FUNCTION PDF
   // =========================
   try {
     await axios.post(
@@ -224,7 +243,7 @@ async function main() {
       { headers: { "Content-Type": "application/json" } }
     );
 
-    console.log("📄 PDF ENVIADO OK");
+    console.log("📄 PDF GENERADO OK");
   } catch (err) {
     console.error("EDGE ERROR:", err.message);
   }
