@@ -6,6 +6,7 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
+// 🔹 función genérica de métricas
 async function getMetric(pageId, token, metric, since, until) {
   const url = `https://graph.facebook.com/v19.0/${pageId}/insights`;
 
@@ -20,6 +21,7 @@ async function getMetric(pageId, token, metric, since, until) {
   });
 
   const values = res.data.data?.[0]?.values || [];
+
   return values.reduce((sum, d) => sum + (d.value || 0), 0);
 }
 
@@ -34,24 +36,17 @@ async function main() {
   }
 
   for (const row of data) {
-    try {
-      const pageId = row.id_page;
-      const token = row.token_page;
-      const since = row.fecha_inicio;
-      const until = row.fecha_termino;
+    const pageId = row.id_page;
+    const token = row.token_page;
+    const since = row.fecha_inicio;
+    const until = row.fecha_termino;
 
+    try {
+      // 📊 SOLO MÉTRICAS ESTABLES
       const impressions = await getMetric(
         pageId,
         token,
         "page_impressions_unique",
-        since,
-        until
-      );
-
-      const reactions = await getMetric(
-        pageId,
-        token,
-        "page_actions_post_reactions_like_total",
         since,
         until
       );
@@ -64,20 +59,27 @@ async function main() {
         until
       );
 
+      const reactions = await getMetric(
+        pageId,
+        token,
+        "page_actions_post_reactions_like_total",
+        since,
+        until
+      );
+
       console.log(`Page ${pageId}`, {
         impressions,
         reactions,
         engagement
       });
 
+      // 💾 UPDATE SUPABASE
       const { error: updateError } = await supabase
         .from("pages_clientes")
         .update({
           Impresiones: impressions,
           reactions: reactions,
-          shares: engagement, // fallback real
-          engagement: engagement,
-          comments: engagement
+          engagement: engagement
         })
         .eq("id", row.id);
 
@@ -86,7 +88,7 @@ async function main() {
       }
 
     } catch (err) {
-      console.error(`Error page ${row.id_page}:`, err.response?.data || err.message);
+      console.error(`Error page ${pageId}:`, err.response?.data || err.message);
     }
   }
 }
