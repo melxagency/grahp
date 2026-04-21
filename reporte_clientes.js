@@ -8,7 +8,9 @@ const supabase = createClient(
 
 const CLIENTE = "Puente Cargo";
 
-// 📊 METRICAS META (SERIE DIARIA)
+// =========================
+// 📊 METRICAS SERIE
+// =========================
 async function getMetricSeries(pageId, token, metric, since, until) {
   const res = await axios.get(
     `https://graph.facebook.com/v19.0/${pageId}/insights`,
@@ -26,15 +28,19 @@ async function getMetricSeries(pageId, token, metric, since, until) {
   return res.data.data?.[0]?.values || [];
 }
 
-// 🔁 SHARES POR POST (SERIE)
-async function getSharesSeries(pageId, token, since, until) {
+// =========================
+// 🔥 SHARES + REACTIONS POR POST (OPTIMIZADO)
+// =========================
+async function getPostStats(pageId, token, since, until) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
-  const map = {};
+
+  const sharesMap = {};
+  const reactionsMap = {};
 
   while (url) {
     const res = await axios.get(url, {
       params: {
-        fields: "shares,created_time",
+        fields: "created_time,shares,reactions.summary(true)",
         since,
         until,
         limit: 100,
@@ -44,16 +50,23 @@ async function getSharesSeries(pageId, token, since, until) {
 
     for (const post of res.data.data || []) {
       const day = post.created_time.split("T")[0];
-      map[day] = (map[day] || 0) + (post.shares?.count || 0);
+
+      const shares = post.shares?.count || 0;
+
+      const reactions =
+        post.reactions?.summary?.total_count || 0;
+
+      sharesMap[day] = (sharesMap[day] || 0) + shares;
+      reactionsMap[day] = (reactionsMap[day] || 0) + reactions;
     }
 
     url = res.data.paging?.next || null;
   }
 
-  return map;
+  return { sharesMap, reactionsMap };
 }
 
-// 📅 GENERAR DÍAS
+// =========================
 function getDays(start, end) {
   const days = [];
   let current = new Date(start);
@@ -67,27 +80,21 @@ function getDays(start, end) {
   return days;
 }
 
+// =========================
 // 🚀 MAIN
+// =========================
 async function main() {
   const { data, error } = await supabase
     .from("pages_clientes")
     .select("*")
     .eq("cliente", CLIENTE);
 
-  if (error) {
-    console.error("Supabase error:", error);
-    return;
-  }
-
-  if (!data.length) {
-    console.log("No data found");
-    return;
-  }
+  if (error) return console.error(error);
+  if (!data.length) return console.log("No data");
 
   const first = data[0];
   const days = getDays(first.fecha_inicio, first.fecha_termino);
 
-  // 🔥 ID GLOBAL DEL REPORTE
   const id_reporte = Date.now() + Math.floor(Math.random() * 1000);
 
   const post_diarios = data.reduce(
@@ -98,7 +105,7 @@ async function main() {
   const daily = {};
 
   // =========================
-  // 📊 RECOLECCIÓN DE DATOS
+  // 📊 DATA FETCH
   // =========================
   for (const row of data) {
     try {
@@ -118,54 +125,50 @@ async function main() {
         first.fecha_termino
       );
 
-      const sharesMap = await getSharesSeries(
+      const { sharesMap, reactionsMap } = await getPostStats(
         row.id_page,
         row.token_page,
         first.fecha_inicio,
         first.fecha_termino
       );
 
-      // 📌 agrupar impresiones
+      // impressions
       for (const item of impressionsSeries) {
         const day = item.end_time.split("T")[0];
-
-        if (!daily[day]) {
-          daily[day] = { imp: 0, eng: 0, sha: 0 };
-        }
+        if (!daily[day]) daily[day] = { imp: 0, eng: 0, sha: 0, rea: 0 };
 
         daily[day].imp += item.value || 0;
       }
 
-      // 📌 engagement
+      // engagement
       for (const item of engagementSeries) {
         const day = item.end_time.split("T")[0];
-
-        if (!daily[day]) {
-          daily[day] = { imp: 0, eng: 0, sha: 0 };
-        }
+        if (!daily[day]) daily[day] = { imp: 0, eng: 0, sha: 0, rea: 0 };
 
         daily[day].eng += item.value || 0;
       }
 
-      // 📌 shares
+      // shares + reactions
       for (const day in sharesMap) {
-        if (!daily[day]) {
-          daily[day] = { imp: 0, eng: 0, sha: 0 };
-        }
-
+        if (!daily[day]) daily[day] = { imp: 0, eng: 0, sha: 0, rea: 0 };
         daily[day].sha += sharesMap[day];
       }
 
+      for (const day in reactionsMap) {
+        if (!daily[day]) daily[day] = { imp: 0, eng: 0, sha: 0, rea: 0 };
+        daily[day].rea += reactionsMap[day];
+      }
+
     } catch (err) {
-      console.error("ERROR PAGE:", row.id_page, err.response?.data || err.message);
+      console.error("ERROR PAGE:", err.message);
     }
   }
 
   // =========================
-  // 💾 INSERT REPORTES
+  // 💾 UPSERT
   // =========================
   for (const day of days) {
-    const d = daily[day] || { imp: 0, eng: 0, sha: 0 };
+    const d = daily[day] || { imp: 0, eng: 0, sha: 0, rea: 0 };
 
     const engagement_real = d.eng - d.sha;
 
@@ -178,9 +181,10 @@ async function main() {
     );
 
     console.log("TOTAL", day, {
-      totalImpressions: d.imp,
-      totalEngagement: d.eng,
-      totalShares: d.sha,
+      imp: d.imp,
+      eng: d.eng,
+      shares: d.sha,
+      reactions: d.rea,
       engagement_real,
       post_diarios
     });
@@ -192,7 +196,7 @@ async function main() {
         cliente: CLIENTE,
 
         Impresiones: d.imp,
-        reactions: 0,
+        reactions: d.rea, // ✅ AHORA REAL
         shares: d.sha,
         engagement: d.eng,
         engagement_real,
@@ -207,34 +211,22 @@ async function main() {
       }
     );
 
-    if (error) {
-      console.error("INSERT ERROR:", error);
-    }
+    if (error) console.error("INSERT ERROR:", error);
   }
 
   // =========================
-  // 🚀 EDGE FUNCTION (PDF + TELEGRAM)
+  // EDGE FUNCTION PDF
   // =========================
   try {
-    const res = await axios.post(
+    await axios.post(
       "https://cqwdrsxcylkvlscvggwt.supabase.co/functions/v1/reporte_clientes",
-      {
-        id_reporte
-      },
-      {
-        headers: {
-          "Content-Type": "application/json"
-        }
-      }
+      { id_reporte },
+      { headers: { "Content-Type": "application/json" } }
     );
 
-    console.log("📄 PDF EDGE FUNCTION OK:", res.data);
-
+    console.log("📄 PDF ENVIADO OK");
   } catch (err) {
-    console.error(
-      "❌ EDGE FUNCTION ERROR:",
-      err.response?.data || err.message
-    );
+    console.error("EDGE ERROR:", err.message);
   }
 }
 
