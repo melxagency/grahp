@@ -6,7 +6,7 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-// 📊 INSIGHTS GENERALES
+// 🔹 INSIGHTS (Meta agregados)
 async function getMetric(pageId, token, metric, since, until) {
   const url = `https://graph.facebook.com/v19.0/${pageId}/insights`;
 
@@ -25,36 +25,7 @@ async function getMetric(pageId, token, metric, since, until) {
   return values.reduce((sum, d) => sum + (d.value || 0), 0);
 }
 
-// 🔥 CLICK FIX (CORRECTO)
-async function getClicks(pageId, token, since, until) {
-  const url = `https://graph.facebook.com/v19.0/${pageId}/insights`;
-
-  const res = await axios.get(url, {
-    params: {
-      metric: "page_consumptions_by_type",
-      period: "day",
-      since,
-      until,
-      access_token: token
-    }
-  });
-
-  const values = res.data.data?.[0]?.values || [];
-
-  let totalClicks = 0;
-
-  for (const day of values) {
-    const value = day.value || {};
-
-    for (const key in value) {
-      totalClicks += value[key] || 0;
-    }
-  }
-
-  return totalClicks;
-}
-
-// 🔁 SHARES REALES (POSTS)
+// 🔹 SHARES REALES DESDE POSTS
 async function getTotalShares(pageId, token, since, until) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
   let totalShares = 0;
@@ -70,7 +41,9 @@ async function getTotalShares(pageId, token, since, until) {
       }
     });
 
-    for (const post of res.data.data || []) {
+    const posts = res.data.data || [];
+
+    for (const post of posts) {
       totalShares += post.shares?.count || 0;
     }
 
@@ -80,7 +53,7 @@ async function getTotalShares(pageId, token, since, until) {
   return totalShares;
 }
 
-// 🚀 MAIN
+// 🔥 MAIN
 async function main() {
   const { data, error } = await supabase
     .from("pages_clientes")
@@ -107,14 +80,6 @@ async function main() {
         until
       );
 
-      const engagement = await getMetric(
-        pageId,
-        token,
-        "page_post_engagements",
-        since,
-        until
-      );
-
       const reactions = await getMetric(
         pageId,
         token,
@@ -123,10 +88,10 @@ async function main() {
         until
       );
 
-      // 🔥 CLICK CORREGIDO
-      const clicks = await getClicks(
+      const engagement = await getMetric(
         pageId,
         token,
+        "page_post_engagements",
         since,
         until
       );
@@ -139,16 +104,11 @@ async function main() {
         until
       );
 
-      // 🧠 ENGAGEMENT REAL
-      const engagement_real = engagement - shares;
-
       console.log(`Page ${pageId}`, {
         impressions,
         reactions,
         engagement,
-        shares,
-        clicks,
-        engagement_real
+        shares
       });
 
       // 💾 UPDATE SUPABASE
@@ -158,9 +118,7 @@ async function main() {
           Impresiones: impressions,
           reactions: reactions,
           engagement: engagement,
-          shares: shares,
-          clicks: clicks,
-          engagement_real: engagement_real
+          shares: shares
         })
         .eq("id", row.id);
 
