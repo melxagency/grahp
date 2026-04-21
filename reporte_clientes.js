@@ -6,10 +6,10 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-// 🎯 CLIENTE
+// 🎯 CLIENTE POR DEFECTO
 const CLIENTE = "Puente Cargo";
 
-// 📊 INSIGHTS
+// 📊 INSIGHTS META
 async function getMetric(pageId, token, metric, since, until) {
   const url = `https://graph.facebook.com/v19.0/${pageId}/insights`;
 
@@ -28,7 +28,7 @@ async function getMetric(pageId, token, metric, since, until) {
   return values.reduce((sum, d) => sum + (d.value || 0), 0);
 }
 
-// 🔁 SHARES
+// 🔁 SHARES REALES
 async function getTotalShares(pageId, token, since, until) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
   let totalShares = 0;
@@ -54,7 +54,7 @@ async function getTotalShares(pageId, token, since, until) {
   return totalShares;
 }
 
-// 📅 generar días
+// 📅 generar rango de días
 function getDays(start, end) {
   const days = [];
   let current = new Date(start);
@@ -78,24 +78,24 @@ async function main() {
     .eq("cliente", CLIENTE);
 
   if (error) {
-    console.error(error);
+    console.error("Supabase error:", error);
     return;
   }
 
   if (!data.length) {
-    console.log("No pages found");
+    console.log("No data found for client");
     return;
   }
-
-  // 🔥 ID REPORTE ÚNICO (SEGURO)
-  const id_reporte = Date.now() + Math.floor(Math.random() * 1000);
 
   const first = data[0];
   const days = getDays(first.fecha_inicio, first.fecha_termino);
 
+  // 🔥 ID DE EJECUCIÓN (batch)
+  const id_reporte = Date.now() + Math.floor(Math.random() * 1000);
+
   for (const day of days) {
 
-    // 🔥 FIX META API (rango válido)
+    // 🔥 FIX META API RANGE
     const since = day;
     const untilDate = new Date(day);
     untilDate.setDate(untilDate.getDate() + 1);
@@ -149,29 +149,31 @@ async function main() {
       engagement_real
     });
 
-    // 💾 UPSERT (evita duplicados)
+    // 💾 UPSERT (SIN DUPLICADOS)
     const { error: insertError } = await supabase
       .from("reportes")
-      .upsert({
-        id_reporte: id_reporte,
-        fecha: day,
-        cliente: CLIENTE,
+      .upsert(
+        {
+          id_reporte,
+          fecha: day,
+          cliente: CLIENTE,
 
-        Impresiones: totalImpressions,
-        reactions: 0,
-        shares: totalShares,
-        engagement: totalEngagement,
-        engagement_real: engagement_real,
+          Impresiones: totalImpressions,
+          reactions: 0,
+          shares: totalShares,
+          engagement: totalEngagement,
+          engagement_real,
 
-        post_programados_diarios: first.post_programados_diarios || 0,
-        total_post: 0,
-        total_real_post: 0,
-
-        promedio_impresiones_post: 0,
-        promedio_engagement_real_post: 0
-      }, {
-        onConflict: 'id_reporte, fecha'
-      });
+          post_programados_diarios: first.post_programados_diarios || 0,
+          total_post: 0,
+          total_real_post: 0,
+          promedio_impresiones_post: 0,
+          promedio_engagement_real_post: 0
+        },
+        {
+          onConflict: "cliente, fecha"
+        }
+      );
 
     if (insertError) {
       console.error("INSERT ERROR:", insertError);
