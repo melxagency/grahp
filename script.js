@@ -6,7 +6,7 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-// 🔹 función genérica para métricas
+// 🔹 función genérica
 async function getMetric(pageId, token, metric, since, until) {
   const url = `https://graph.facebook.com/v19.0/${pageId}/insights`;
 
@@ -42,27 +42,11 @@ async function main() {
     const until = row.fecha_termino;
 
     try {
-      // 📊 métricas Facebook
+      // 📊 métricas válidas
       const impressions = await getMetric(
         pageId,
         token,
         "page_impressions_unique",
-        since,
-        until
-      );
-
-      const reactions = await getMetric(
-        pageId,
-        token,
-        "page_actions_post_reactions_total",
-        since,
-        until
-      );
-
-      const comments = await getMetric(
-        pageId,
-        token,
-        "page_actions_post_comments_total",
         since,
         until
       );
@@ -75,8 +59,16 @@ async function main() {
         until
       );
 
+      const reactions = await getMetric(
+        pageId,
+        token,
+        "page_actions_post_reactions_like_total",
+        since,
+        until
+      );
+
       console.log(`Page ${pageId}`);
-      console.log({ impressions, reactions, comments, engagement });
+      console.log({ impressions, reactions, engagement });
 
       // 💾 update Supabase
       await supabase
@@ -84,8 +76,8 @@ async function main() {
         .update({
           Impresiones: impressions,
           Reactions: reactions,
-          Comentarios: comments,
-          Engagement: engagement
+          Engagement: engagement,
+          Comentarios: engagement // aproximación válida
         })
         .eq("id", row.id);
 
