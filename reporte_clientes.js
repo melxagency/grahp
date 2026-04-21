@@ -6,7 +6,7 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-// 🎯 CLIENTE POR DEFECTO
+// 🎯 CLIENTE
 const CLIENTE = "Puente Cargo";
 
 // 📊 METRICAS META
@@ -53,7 +53,7 @@ async function getTotalShares(pageId, token, since, until) {
   return totalShares;
 }
 
-// 📅 generar rango de días
+// 📅 DÍAS
 function getDays(start, end) {
   const days = [];
   let current = new Date(start);
@@ -67,10 +67,9 @@ function getDays(start, end) {
   return days;
 }
 
-// 🔥 MAIN
+// 🚀 MAIN
 async function main() {
 
-  // 📌 páginas del cliente
   const { data, error } = await supabase
     .from("pages_clientes")
     .select("*")
@@ -88,15 +87,14 @@ async function main() {
 
   const first = data[0];
 
-  // 📌 SUMA GLOBAL DE POSTS PROGRAMADOS
-  const post_diarios_total = data.reduce(
+  // 🔥 SUMA GLOBAL POSTS PROGRAMADOS
+  const post_diarios = data.reduce(
     (sum, p) => sum + (p.post_programados_diarios || 0),
     0
   );
 
   const days = getDays(first.fecha_inicio, first.fecha_termino);
 
-  // 🔥 ID DE EJECUCIÓN (MISMO PARA TODO EL BATCH)
   const id_reporte = Date.now() + Math.floor(Math.random() * 1000);
 
   for (const day of days) {
@@ -147,24 +145,20 @@ async function main() {
 
     const engagement_real = totalEngagement - totalShares;
 
-    // 📌 promedio por post (evita división por 0)
-    const totalPosts = post_diarios_total || 1;
-
     const promedio_impresiones_post =
-      Number((totalImpressions / totalPosts).toFixed(4));
+      Number((totalImpressions / (post_diarios || 1)).toFixed(4));
 
     const promedio_engagement_real_post =
-      Number((engagement_real / totalPosts).toFixed(4));
+      Number((engagement_real / (post_diarios || 1)).toFixed(4));
 
     console.log(`TOTAL ${day}`, {
       totalImpressions,
       totalEngagement,
       totalShares,
       engagement_real,
-      post_diarios_total
+      post_diarios
     });
 
-    // 💾 UPSERT FINAL
     const { error: insertError } = await supabase
       .from("reportes")
       .upsert(
@@ -179,10 +173,7 @@ async function main() {
           engagement: totalEngagement,
           engagement_real,
 
-          post_diarios: post_diarios_total,
-
-          total_post: 0,
-          total_real_post: 0,
+          post_diarios,
 
           promedio_impresiones_post,
           promedio_engagement_real_post
