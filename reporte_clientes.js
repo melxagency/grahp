@@ -9,7 +9,7 @@ const supabase = createClient(
 const CLIENTE = "Puente Cargo";
 
 // =========================
-// 📊 METRICAS META
+// 📊 METRICAS (SERIE DIARIA)
 // =========================
 async function getMetricSeries(pageId, token, metric, since, until) {
   const res = await axios.get(
@@ -29,21 +29,17 @@ async function getMetricSeries(pageId, token, metric, since, until) {
 }
 
 // =========================
-// 🔥 POSTS + REACTIONS (FIX REAL)
+// 🔥 SHARES (SOLO LO NECESARIO)
 // =========================
-async function getPostStats(pageId, token, since, until) {
+async function getSharesMap(pageId, token, since, until) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
 
-  const reactionsMap = {};
   const sharesMap = {};
 
-  const posts = [];
-
-  // 1. traer posts
   while (url) {
     const res = await axios.get(url, {
       params: {
-        fields: "id,created_time,shares",
+        fields: "shares,created_time",
         since,
         until,
         limit: 100,
@@ -51,49 +47,17 @@ async function getPostStats(pageId, token, since, until) {
       }
     });
 
-    posts.push(...(res.data.data || []));
+    for (const post of res.data.data || []) {
+      const day = post.created_time.split("T")[0];
+      const shares = post.shares?.count || 0;
+
+      sharesMap[day] = (sharesMap[day] || 0) + shares;
+    }
+
     url = res.data.paging?.next || null;
   }
 
-  // 2. reactions reales por post (CORRECTO + COMPLETO)
-  await Promise.all(
-    posts.map(async (post) => {
-      try {
-        const r = await axios.get(
-          `https://graph.facebook.com/v19.0/${post.id}`,
-          {
-            params: {
-              fields: `
-                reactions.type(LIKE).summary(true).limit(0),
-                reactions.type(LOVE).summary(true).limit(0),
-                reactions.type(WOW).summary(true).limit(0),
-                reactions.type(HAHA).summary(true).limit(0),
-                reactions.type(SAD).summary(true).limit(0),
-                reactions.type(ANGRY).summary(true).limit(0),
-                shares
-              `,
-              access_token: token
-            }
-          }
-        );
-
-        const day = post.created_time.split("T")[0];
-
-        const reactions =
-          (r.data.reactions?.summary?.total_count || 0);
-
-        const shares = post.shares?.count || 0;
-
-        reactionsMap[day] = (reactionsMap[day] || 0) + reactions;
-        sharesMap[day] = (sharesMap[day] || 0) + shares;
-
-      } catch (err) {
-        console.error("POST ERROR:", post.id, err.message);
-      }
-    })
-  );
-
-  return { reactionsMap, sharesMap };
+  return sharesMap;
 }
 
 // =========================
@@ -155,7 +119,7 @@ async function main() {
         first.fecha_termino
       );
 
-      const { reactionsMap, sharesMap } = await getPostStats(
+      const sharesMap = await getSharesMap(
         row.id_page,
         row.token_page,
         first.fecha_inicio,
@@ -165,26 +129,25 @@ async function main() {
       // impresiones
       for (const item of impressionsSeries) {
         const day = item.end_time.split("T")[0];
-        if (!daily[day]) daily[day] = { imp: 0, eng: 0, sha: 0, rea: 0 };
+
+        if (!daily[day]) daily[day] = { imp: 0, eng: 0, sha: 0 };
+
         daily[day].imp += item.value || 0;
       }
 
       // engagement
       for (const item of engagementSeries) {
         const day = item.end_time.split("T")[0];
-        if (!daily[day]) daily[day] = { imp: 0, eng: 0, sha: 0, rea: 0 };
-        daily[day].eng += item.value || 0;
-      }
 
-      // reactions
-      for (const day in reactionsMap) {
-        if (!daily[day]) daily[day] = { imp: 0, eng: 0, sha: 0, rea: 0 };
-        daily[day].rea += reactionsMap[day];
+        if (!daily[day]) daily[day] = { imp: 0, eng: 0, sha: 0 };
+
+        daily[day].eng += item.value || 0;
       }
 
       // shares
       for (const day in sharesMap) {
-        if (!daily[day]) daily[day] = { imp: 0, eng: 0, sha: 0, rea: 0 };
+        if (!daily[day]) daily[day] = { imp: 0, eng: 0, sha: 0 };
+
         daily[day].sha += sharesMap[day];
       }
 
@@ -197,7 +160,7 @@ async function main() {
   // 💾 INSERT
   // =========================
   for (const day of days) {
-    const d = daily[day] || { imp: 0, eng: 0, sha: 0, rea: 0 };
+    const d = daily[day] || { imp: 0, eng: 0, sha: 0 };
 
     const engagement_real = d.eng - d.sha;
 
@@ -213,8 +176,8 @@ async function main() {
       imp: d.imp,
       eng: d.eng,
       shares: d.sha,
-      reactions: d.rea,
-      engagement_real
+      engagement_real,
+      post_diarios
     });
 
     const { error } = await supabase.from("reportes").upsert(
@@ -224,7 +187,6 @@ async function main() {
         cliente: CLIENTE,
 
         Impresiones: d.imp,
-        reactions: d.rea,   // ✅ YA REAL
         shares: d.sha,
         engagement: d.eng,
         engagement_real,
@@ -250,7 +212,7 @@ async function main() {
       { headers: { "Content-Type": "application/json" } }
     );
 
-    console.log("📄 PDF OK");
+    console.log("📄 PDF GENERADO OK");
   } catch (err) {
     console.error("EDGE ERROR:", err.message);
   }
