@@ -9,7 +9,7 @@ const supabase = createClient(
 // 🎯 CLIENTE
 const CLIENTE = "Puente Cargo";
 
-// 📊 METRICAS META
+// 📊 METRICA META
 async function getMetric(pageId, token, metric, since, until) {
   const url = `https://graph.facebook.com/v19.0/${pageId}/insights`;
 
@@ -80,14 +80,9 @@ async function main() {
     return;
   }
 
-  if (!data.length) {
-    console.log("No data found for client");
-    return;
-  }
-
   const first = data[0];
 
-  // 🔥 SUMA GLOBAL POSTS PROGRAMADOS
+  // 📌 POSTS TOTALES PROGRAMADOS
   const post_diarios = data.reduce(
     (sum, p) => sum + (p.post_programados_diarios || 0),
     0
@@ -134,9 +129,9 @@ async function main() {
           until
         );
 
-        totalImpressions += impressions;
-        totalEngagement += engagement;
-        totalShares += shares;
+        totalImpressions += Number(impressions || 0);
+        totalEngagement += Number(engagement || 0);
+        totalShares += Number(shares || 0);
 
       } catch (err) {
         console.error(`Error page ${row.id_page} ${day}:`, err.response?.data || err.message);
@@ -145,11 +140,14 @@ async function main() {
 
     const engagement_real = totalEngagement - totalShares;
 
+    // 🔥 PROMEDIOS 100% ENTEROS
+    const safePosts = parseInt(post_diarios || 1);
+
     const promedio_impresiones_post =
-      Number((totalImpressions / (post_diarios || 1)).toFixed(4));
+      Math.round(totalImpressions / safePosts);
 
     const promedio_engagement_real_post =
-      Number((engagement_real / (post_diarios || 1)).toFixed(4));
+      Math.round(engagement_real / safePosts);
 
     console.log(`TOTAL ${day}`, {
       totalImpressions,
@@ -159,6 +157,7 @@ async function main() {
       post_diarios
     });
 
+    // 💾 INSERT SAFE
     const { error: insertError } = await supabase
       .from("reportes")
       .upsert(
