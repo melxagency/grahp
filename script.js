@@ -42,19 +42,11 @@ async function main() {
     const until = row.fecha_termino;
 
     try {
-      // 📊 métricas válidas
+      // 📊 métricas Facebook
       const impressions = await getMetric(
         pageId,
         token,
         "page_impressions_unique",
-        since,
-        until
-      );
-
-      const engagement = await getMetric(
-        pageId,
-        token,
-        "page_post_engagements",
         since,
         until
       );
@@ -67,19 +59,44 @@ async function main() {
         until
       );
 
-      console.log(`Page ${pageId}`);
-      console.log({ impressions, reactions, engagement });
+      const shares = await getMetric(
+        pageId,
+        token,
+        "page_actions_post_shares_total",
+        since,
+        until
+      );
 
-      // 💾 update Supabase
-      await supabase
+      const engagement = await getMetric(
+        pageId,
+        token,
+        "page_post_engagements",
+        since,
+        until
+      );
+
+      console.log(`Page ${pageId}`, {
+        impressions,
+        reactions,
+        shares,
+        engagement
+      });
+
+      // 💾 UPDATE SUPABASE (IMPORTANTE: nombres EXACTOS)
+      const { error: updateError } = await supabase
         .from("pages_clientes")
         .update({
           Impresiones: impressions,
-          Reactions: reactions,
-          Engagement: engagement,
-          Comentarios: engagement // aproximación válida
+          reactions: reactions,
+          shares: shares,
+          engagement: engagement,
+          comments: engagement
         })
         .eq("id", row.id);
+
+      if (updateError) {
+        console.error("UPDATE ERROR:", updateError);
+      }
 
     } catch (err) {
       console.error(`Error page ${pageId}:`, err.response?.data || err.message);
