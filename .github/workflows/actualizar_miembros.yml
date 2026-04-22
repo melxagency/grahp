@@ -59,39 +59,48 @@ jobs:
 
             echo "👥 $COUNT"
 
-            RESULT=$(echo "$RESULT" | jq --arg id "$GROUP_ID" --argjson count "$COUNT" \
-              '. + [{"id_group": ($id | tonumber), "miembros_actuales": $count}]')
+            RESULT=$(echo "$RESULT" | jq \
+              --arg id "$GROUP_ID" \
+              --argjson count "$COUNT" \
+              '. + [{"id_group": $id, "miembros_actuales": $count}]')
           done
 
           echo "$RESULT" > update_payload.json
 
       # =========================
-      # 5. CLEAN JSON
+      # 5. UPDATE ONE BY ONE
       # =========================
-      - name: Clean JSON payload
-        run: |
-          jq -c '.' update_payload.json > payload_clean.json
-
-      # =========================
-      # 6. BULK UPDATE SUPABASE
-      # =========================
-      - name: Send bulk update
+      - name: Update Supabase one by one
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          echo "🚀 Sending bulk update..."
+          echo "🚀 Updating groups one by one..."
 
-          curl -s -X POST \
-            "${SUPABASE_URL}/functions/v1/bulk-update-members" \
-            -H "Authorization: Bearer ${SUPABASE_KEY}" \
-            -H "Content-Type: application/json" \
-            --data-binary @payload_clean.json
+          for row in $(jq -c '.[]' update_payload.json); do
+            GROUP_ID=$(echo "$row" | jq -r '.id_group')
+            COUNT=$(echo "$row" | jq -r '.miembros_actuales')
 
-          echo "✅ Bulk update completed"
+            echo "📦 Updating $GROUP_ID → $COUNT"
+
+            RESPONSE=$(curl -s -o response.txt -w "%{http_code}" -X PATCH \
+              "${SUPABASE_URL}/rest/v1/facebook_groups?id_group=eq.${GROUP_ID}" \
+              -H "apikey: ${SUPABASE_KEY}" \
+              -H "Authorization: Bearer ${SUPABASE_KEY}" \
+              -H "Content-Type: application/json" \
+              -H "Prefer: return=minimal" \
+              -d "{\"miembros_actuales\": $COUNT}")
+
+            echo "HTTP: $RESPONSE"
+            cat response.txt
+
+            echo "✅ Updated $GROUP_ID"
+          done
+
+          echo "🎉 All groups updated"
 
       # =========================
-      # 7. SEND TELEGRAM REPORT (WITH FILE NAME)
+      # 6. SEND TELEGRAM REPORT
       # =========================
       - name: Send Telegram report
         env:
@@ -99,9 +108,7 @@ jobs:
         run: |
           echo "📨 Sending report..."
 
-          FILE_NAME="reporte_miembros ${DATE}.pdf"
-
-          echo "📄 PDF name: $FILE_NAME"
+          FILE_NAME="reporte_miembros $(date +'%Y-%m-%d').pdf"
 
           curl -s -X POST \
             "https://cqwdrsxcylkvlscvggwt.supabase.co/functions/v1/telegram-notify" \
