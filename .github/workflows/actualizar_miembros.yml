@@ -37,7 +37,7 @@ jobs:
             > groups.json
 
       # =========================
-      # 4. FETCH FACEBOOK DATA
+      # 4. FETCH FACEBOOK DATA (SAFE)
       # =========================
       - name: Fetch Facebook data
         env:
@@ -55,9 +55,22 @@ jobs:
             RESPONSE=$(curl -s \
               "https://graph.facebook.com/v25.0/${GROUP_ID}?fields=member_count&access_token=${FACEBOOK_TOKEN}")
 
-            COUNT=$(echo "$RESPONSE" | jq -r '.member_count // 0')
+            COUNT=$(echo "$RESPONSE" | jq -r '.member_count')
 
-            echo "👥 $COUNT"
+            # =========================
+            # VALIDACIONES CRÍTICAS
+            # =========================
+            if [[ -z "$COUNT" || "$COUNT" == "null" ]]; then
+              echo "⚠️ NULL response → skip $GROUP_ID"
+              continue
+            fi
+
+            if [[ "$COUNT" -eq 0 ]]; then
+              echo "⚠️ COUNT = 0 detected (API limit/error) → skip $GROUP_ID"
+              continue
+            fi
+
+            echo "👥 VALID COUNT: $COUNT"
 
             RESULT=$(echo "$RESULT" | jq \
               --arg id "$GROUP_ID" \
@@ -68,7 +81,7 @@ jobs:
           echo "$RESULT" > update_payload.json
 
       # =========================
-      # 5. UPDATE ONE BY ONE
+      # 5. UPDATE SUPABASE ONE BY ONE
       # =========================
       - name: Update Supabase one by one
         env:
