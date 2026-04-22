@@ -55,22 +55,25 @@ jobs:
             RESPONSE=$(curl -s \
               "https://graph.facebook.com/v25.0/${GROUP_ID}?fields=member_count&access_token=${FACEBOOK_TOKEN}")
 
-            COUNT=$(echo "$RESPONSE" | jq -r '.member_count')
+            COUNT=$(echo "$RESPONSE" | jq -r '.member_count // empty')
+
+            echo "👥 RAW COUNT: $COUNT"
 
             # =========================
-            # VALIDACIONES CRÍTICAS
+            # 🔥 VALIDACIONES IMPORTANTES
             # =========================
-            if [[ -z "$COUNT" || "$COUNT" == "null" ]]; then
-              echo "⚠️ NULL response → skip $GROUP_ID"
+
+            # Si viene vacío o null → saltar
+            if [ -z "$COUNT" ] || [ "$COUNT" = "null" ]; then
+              echo "⚠️ Skipping $GROUP_ID (invalid response)"
               continue
             fi
 
-            if [[ "$COUNT" -eq 0 ]]; then
-              echo "⚠️ COUNT = 0 detected (API limit/error) → skip $GROUP_ID"
+            # Si es 0 → NO actualizar (evita borrados falsos)
+            if [ "$COUNT" -eq 0 ]; then
+              echo "⚠️ Skipping $GROUP_ID (0 detected - likely API limit)"
               continue
             fi
-
-            echo "👥 VALID COUNT: $COUNT"
 
             RESULT=$(echo "$RESULT" | jq \
               --arg id "$GROUP_ID" \
@@ -81,7 +84,7 @@ jobs:
           echo "$RESULT" > update_payload.json
 
       # =========================
-      # 5. UPDATE SUPABASE ONE BY ONE
+      # 5. UPDATE ONE BY ONE (SAFE)
       # =========================
       - name: Update Supabase one by one
         env:
@@ -105,15 +108,12 @@ jobs:
               -d "{\"miembros_actuales\": $COUNT}")
 
             echo "HTTP: $RESPONSE"
-            cat response.txt
-
-            echo "✅ Updated $GROUP_ID"
           done
 
-          echo "🎉 All groups updated"
+          echo "🎉 All valid groups updated"
 
       # =========================
-      # 6. SEND TELEGRAM REPORT
+      # 6. TELEGRAM REPORT
       # =========================
       - name: Send Telegram report
         env:
