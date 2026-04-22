@@ -1,4 +1,4 @@
-name: Reporte_Pages
+name: Reporte Pages Custom_Date
 
 on:
   workflow_dispatch:
@@ -25,4 +25,4 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: node reporte_pages.js
+        run: node reporte_pages_Custom_Date.js
