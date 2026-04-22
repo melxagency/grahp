@@ -1,4 +1,4 @@
-name: Clientes_Insights
+name: Reporte_Pages
 
 on:
   workflow_dispatch:
