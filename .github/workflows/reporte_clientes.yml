@@ -1,4 +1,4 @@
-name: Reporte Clientes Diario
+name: Reporte Clientes
 
 on:
   workflow_dispatch:
