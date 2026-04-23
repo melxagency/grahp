@@ -7,8 +7,17 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-// 📅 Fecha de hoy (YYYY-MM-DD)
+// 📅 Hoy
 const today = new Date().toISOString().split("T")[0];
+
+// 🔧 Normalizar strings (IMPORTANTE)
+function normalize(str) {
+  return str
+    ?.toLowerCase()
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
 
 // 🔹 INSIGHTS
 async function getMetric(pageId, token, metric, since, until) {
@@ -73,21 +82,21 @@ async function main() {
       return start <= today && (!end || end > today);
     });
 
-    // 2️⃣ Datos de páginas (tokens)
-    const { data: clientes, error: err2 } = await supabase
-      .from("pages_clientes")
+    // 2️⃣ Páginas (tokens reales)
+    const { data: pages, error: err2 } = await supabase
+      .from("pages")
       .select("*");
 
     if (err2) throw err2;
 
     // 🔁 Loop
     for (const service of activePages) {
-      const page = clientes.find(
-        (c) => c.nombre === service.Nombre_pagina
+      const page = pages.find(
+        (p) => normalize(p.nombre) === normalize(service.Nombre_pagina)
       );
 
       if (!page) {
-        console.log("No se encontró token:", service.Nombre_pagina);
+        console.log("❌ No se encontró token:", service.Nombre_pagina);
         continue;
       }
 
@@ -104,7 +113,7 @@ async function main() {
           .maybeSingle();
 
         if (existing) {
-          console.log("Ya existe:", service.Nombre_pagina);
+          console.log("⚠️ Ya existe:", service.Nombre_pagina);
           continue;
         }
 
@@ -140,7 +149,7 @@ async function main() {
           today
         );
 
-        console.log(`Insertando ${service.Nombre_pagina}`, {
+        console.log(`✅ Insertando ${service.Nombre_pagina}`, {
           impressions,
           reactions,
           engagement,
@@ -161,19 +170,19 @@ async function main() {
           });
 
         if (insertError) {
-          console.error("Insert error:", insertError);
+          console.error("❌ Insert error:", insertError);
         }
       } catch (err) {
         console.error(
-          `Error en ${service.Nombre_pagina}:`,
+          `❌ Error en ${service.Nombre_pagina}:`,
           err.response?.data || err.message
         );
       }
     }
 
-    console.log("Proceso terminado 🚀");
+    console.log("🚀 Proceso terminado");
   } catch (err) {
-    console.error("Error general:", err);
+    console.error("❌ Error general:", err);
   }
 }
 
