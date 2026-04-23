@@ -6,19 +6,12 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-// 🔧 formatear fecha YYYY-MM-DD
+// 📅 formatear fecha
 function formatDate(d) {
   return new Date(d).toISOString().split("T")[0];
 }
 
-// 🔧 sumar días
-function addDays(date, days) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return d;
-}
-
-// 🔹 INSIGHTS
+// 🔹 INSIGHTS STABLE
 async function getMetric(pageId, token, metric, since, until) {
   try {
     const res = await axios.get(
@@ -35,34 +28,42 @@ async function getMetric(pageId, token, metric, since, until) {
     );
 
     const values = res.data.data?.[0]?.values || [];
+
     return values.reduce((sum, d) => sum + (d.value || 0), 0);
   } catch (err) {
-    console.error("INSIGHT ERROR:", metric, err.response?.data || err.message);
+    console.error(
+      `❌ INSIGHT ERROR (${metric})`,
+      err.response?.data || err.message
+    );
     return 0;
   }
 }
 
 async function main() {
+
+  // 📦 servicios activos
   const { data: services, error: err1 } = await supabase
     .from("pages_services")
     .select("*");
 
   if (err1) {
-    console.error(err1);
+    console.error("Supabase services error:", err1);
     return;
   }
 
+  // 📦 páginas con credenciales
   const { data: pages, error: err2 } = await supabase
     .from("pages")
     .select("*");
 
   if (err2) {
-    console.error(err2);
+    console.error("Supabase pages error:", err2);
     return;
   }
 
   for (const service of services) {
 
+    // 🔥 match por nombre
     const page = pages.find(
       (p) => p.nombre === service.Nombre_pagina
     );
@@ -80,7 +81,7 @@ async function main() {
       continue;
     }
 
-    // 📅 fechas
+    // 📅 rango fechas
     const startDate = new Date(service.fecha_inicio_explotacion);
     const endDate = service.fecha_termino_explotacion
       ? new Date(service.fecha_termino_explotacion)
@@ -90,23 +91,12 @@ async function main() {
     for (
       let d = new Date(startDate);
       d <= endDate;
-      d = addDays(d, 1)
+      d.setDate(d.getDate() + 1)
     ) {
       const day = formatDate(d);
 
-      // 🚫 evitar duplicados
-      const { data: exists } = await supabase
-        .from("reporte_diario")
-        .select("id_record")
-        .eq("pagina", service.Nombre_pagina)
-        .eq("fecha", day)
-        .maybeSingle();
-
-      if (exists) {
-        continue;
-      }
-
       try {
+        // 📊 métricas
         const impressions = await getMetric(
           pageId,
           token,
@@ -131,21 +121,29 @@ async function main() {
           day
         );
 
-        console.log(`📊 ${service.Nombre_pagina} ${day}`, {
-          impressions,
-          reactions,
-          engagement,
-        });
+        // 🔁 UPSERT (CLAVE DEL SISTEMA)
+        const { error } = await supabase
+          .from("reporte_diario")
+          .upsert(
+            {
+              pagina: service.Nombre_pagina,
+              fecha: day,
+              impresiones: impressions,
+              reaction: reactions,
+              engagement: engagement,
+              share: 0,
+              engagement_real: engagement,
+            },
+            {
+              onConflict: "pagina,fecha",
+            }
+          );
 
-        await supabase.from("reporte_diario").insert({
-          pagina: service.Nombre_pagina,
-          impresiones: impressions,
-          reaction: reactions,
-          engagement: engagement,
-          share: 0,
-          engagement_real: engagement,
-          fecha: day,
-        });
+        if (error) {
+          console.error("UPSERT ERROR:", error);
+        } else {
+          console.log(`📊 OK ${service.Nombre_pagina} ${day}`);
+        }
 
       } catch (err) {
         console.error(
