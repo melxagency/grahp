@@ -1,12 +1,12 @@
-name: Reporte Pages Custom_Date
+name: Reporte Diario Pages
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 3 * * *"
+    - cron: "0 3 * * *" # 3 AM UTC
 
 jobs:
-  update-metrics:
+  reporte-diario:
     runs-on: ubuntu-latest
 
     steps:
@@ -25,4 +25,4 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: node reporte_pages_Custom_Date.js
+        run: node reporte_diario.js
