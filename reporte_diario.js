@@ -6,34 +6,41 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-// 🔹 INSIGHTS (Meta agregados)
+// 📅 HOY (día único)
+const today = new Date().toISOString().split("T")[0];
+
+// 🔧 INSIGHTS (seguro y estable)
 async function getMetric(pageId, token, metric, since, until) {
   try {
-    const url = `https://graph.facebook.com/v19.0/${pageId}/insights`;
-
-    const res = await axios.get(url, {
-      params: {
-        metric,
-        period: "day",
-        since,
-        until,
-        access_token: token,
-      },
-    });
+    const res = await axios.get(
+      `https://graph.facebook.com/v19.0/${pageId}/insights`,
+      {
+        params: {
+          metric,
+          period: "day",
+          since,
+          until,
+          access_token: token,
+        },
+      }
+    );
 
     const values = res.data.data?.[0]?.values || [];
 
-    return values.reduce((sum, d) => sum + (d.value || 0), 0);
+    return values.reduce(
+      (sum, d) => sum + (d.value || 0),
+      0
+    );
   } catch (err) {
     console.error("INSIGHT ERROR:", metric, err.response?.data || err.message);
     return 0;
   }
 }
 
-// 🔥 MAIN
+// 🚀 MAIN
 async function main() {
-  const { data, error } = await supabase
-    .from("pages_clientes")
+  const { data: services, error } = await supabase
+    .from("pages_services")
     .select("*");
 
   if (error) {
@@ -41,73 +48,73 @@ async function main() {
     return;
   }
 
-  for (const row of data) {
-    const pageId = row.id_page;
-    const token = row.token_page;
-    const since = row.fecha_inicio;
-    const until = row.fecha_termino;
+  for (const service of services) {
+
+    // 🧨 VALIDACIÓN CRÍTICA
+    if (!service.id_page || !service.token_page) {
+      console.log("❌ Página incompleta:", service);
+      continue;
+    }
+
+    const pageId = service.id_page;
+    const token = service.token_page;
 
     try {
-      // 📊 INSIGHTS
+      // 📊 SOLO DÍA ACTUAL
       const impressions = await getMetric(
         pageId,
         token,
         "page_impressions_unique",
-        since,
-        until
+        today,
+        today
       );
 
       const reactions = await getMetric(
         pageId,
         token,
         "page_actions_post_reactions_like_total",
-        since,
-        until
+        today,
+        today
       );
 
       const engagement = await getMetric(
         pageId,
         token,
         "page_post_engagements",
-        since,
-        until
+        today,
+        today
       );
 
-      // 🚫 SHARE simplificado (evita errores de /posts)
-      const shares = await getMetric(
-        pageId,
-        token,
-        "page_posts_impressions"
-        ,
-        since,
-        until
-      );
+      // 🔥 SIN POSTS (evita errores de Graph API)
+      const shares = 0;
 
-      console.log(`Page ${pageId}`, {
+      console.log(`📊 ${service.Nombre_pagina}`, {
         impressions,
         reactions,
         engagement,
         shares,
       });
 
-      // 💾 UPDATE SUPABASE
-      const { error: updateError } = await supabase
-        .from("pages_clientes")
-        .update({
-          Impresiones: impressions,
-          reactions: reactions,
+      // 💾 INSERT EN REPORTE DIARIO
+      const { error: insertError } = await supabase
+        .from("reporte_diario")
+        .insert({
+          pagina: service.Nombre_pagina,
+          impresiones: impressions,
+          reaction: reactions,
           engagement: engagement,
-          shares: shares,
-        })
-        .eq("id", row.id);
+          share: shares,
+          engagement_real: engagement,
+          fecha: today,
+        });
 
-      if (updateError) {
-        console.error("UPDATE ERROR:", updateError);
+      if (insertError) {
+        console.error("INSERT ERROR:", insertError);
       }
 
     } catch (err) {
       console.error(
-        `Error page ${pageId}:`,
+        `Error en ${service.Nombre_pagina}:`,
         err.response?.data || err.message
       );
     }
