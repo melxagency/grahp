@@ -6,12 +6,18 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-// 📅 formatear fecha
+// 📅 helpers
 function formatDate(d) {
   return new Date(d).toISOString().split("T")[0];
 }
 
-// 🔹 INSIGHTS STABLE
+function addDays(date, days) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+// 🔹 INSIGHTS
 async function getMetric(pageId, token, metric, since, until) {
   try {
     const res = await axios.get(
@@ -28,75 +34,67 @@ async function getMetric(pageId, token, metric, since, until) {
     );
 
     const values = res.data.data?.[0]?.values || [];
-
     return values.reduce((sum, d) => sum + (d.value || 0), 0);
   } catch (err) {
-    console.error(
-      `❌ INSIGHT ERROR (${metric})`,
-      err.response?.data || err.message
-    );
+    console.error("INSIGHT ERROR:", err.response?.data || err.message);
     return 0;
   }
 }
 
 async function main() {
 
-  // 📦 servicios activos
-  const { data: services, error: err1 } = await supabase
+  // 📦 servicios
+  const { data: services } = await supabase
     .from("pages_services")
     .select("*");
 
-  if (err1) {
-    console.error("Supabase services error:", err1);
-    return;
-  }
-
-  // 📦 páginas con credenciales
-  const { data: pages, error: err2 } = await supabase
+  // 📦 páginas
+  const { data: pages } = await supabase
     .from("pages")
     .select("*");
 
-  if (err2) {
-    console.error("Supabase pages error:", err2);
-    return;
-  }
-
   for (const service of services) {
 
-    // 🔥 match por nombre
     const page = pages.find(
       (p) => p.nombre === service.Nombre_pagina
     );
 
-    if (!page) {
-      console.log("❌ No existe page:", service.Nombre_pagina);
-      continue;
-    }
+    if (!page) continue;
 
     const pageId = page.id_page;
     const token = page.token;
 
-    if (!pageId || !token) {
-      console.log("❌ Página incompleta:", service.Nombre_pagina);
-      continue;
-    }
+    if (!pageId || !token) continue;
 
-    // 📅 rango fechas
+    // 📅 rango
     const startDate = new Date(service.fecha_inicio_explotacion);
     const endDate = service.fecha_termino_explotacion
       ? new Date(service.fecha_termino_explotacion)
       : new Date();
 
-    // 🔁 loop diario
+    // 📥 traer lo que YA existe
+    const { data: existing } = await supabase
+      .from("reporte_diario")
+      .select("fecha")
+      .eq("pagina", service.Nombre_pagina);
+
+    const existingSet = new Set(
+      (existing || []).map((r) => r.fecha)
+    );
+
+    // 🔁 recorrer solo huecos
     for (
       let d = new Date(startDate);
       d <= endDate;
-      d.setDate(d.getDate() + 1)
+      d = addDays(d, 1)
     ) {
       const day = formatDate(d);
 
+      // 🚫 si ya existe, skip
+      if (existingSet.has(day)) continue;
+
       try {
-        // 📊 métricas
+
         const impressions = await getMetric(
           pageId,
           token,
@@ -121,29 +119,17 @@ async function main() {
           day
         );
 
-        // 🔁 UPSERT (CLAVE DEL SISTEMA)
-        const { error } = await supabase
-          .from("reporte_diario")
-          .upsert(
-            {
-              pagina: service.Nombre_pagina,
-              fecha: day,
-              impresiones: impressions,
-              reaction: reactions,
-              engagement: engagement,
-              share: 0,
-              engagement_real: engagement,
-            },
-            {
-              onConflict: "pagina,fecha",
-            }
-          );
+        await supabase.from("reporte_diario").insert({
+          pagina: service.Nombre_pagina,
+          fecha: day,
+          impresiones: impressions,
+          reaction: reactions,
+          engagement: engagement,
+          share: 0,
+          engagement_real: engagement,
+        });
 
-        if (error) {
-          console.error("UPSERT ERROR:", error);
-        } else {
-          console.log(`📊 OK ${service.Nombre_pagina} ${day}`);
-        }
+        console.log(`➕ FILL ${service.Nombre_pagina} ${day}`);
 
       } catch (err) {
         console.error(
