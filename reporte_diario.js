@@ -6,7 +6,6 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-// 📅 helpers
 const formatDate = (d) =>
   new Date(d).toISOString().split("T")[0];
 
@@ -16,7 +15,7 @@ const addDays = (date, days) => {
   return d;
 };
 
-// 🔹 META INSIGHTS SAFE
+// 🔹 METRICS
 async function getMetric(pageId, token, metric, since, until) {
   try {
     const res = await axios.get(
@@ -33,22 +32,16 @@ async function getMetric(pageId, token, metric, since, until) {
     );
 
     const values = res.data.data?.[0]?.values || [];
-
-    return values.reduce(
-      (sum, d) => sum + (d.value || 0),
-      0
-    );
-
-  } catch (err) {
-    console.error("INSIGHT ERROR:", metric, err.response?.data || err.message);
-    return 0; // 🔥 IMPORTANTE
+    return values.reduce((s, d) => s + (d.value || 0), 0);
+  } catch {
+    return 0;
   }
 }
 
-// 🔹 SHARES SAFE
+// 🔹 SHARES
 async function getSharesByDay(pageId, token, since, until) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
-  let totalShares = 0;
+  let total = 0;
 
   try {
     while (url) {
@@ -62,51 +55,26 @@ async function getSharesByDay(pageId, token, since, until) {
         },
       });
 
-      const posts = res.data.data || [];
-
-      for (const post of posts) {
-        totalShares += post.shares?.count || 0;
+      for (const post of res.data.data || []) {
+        total += post.shares?.count || 0;
       }
 
       url = res.data.paging?.next || null;
     }
-  } catch (err) {
-    console.error("SHARE ERROR:", err.response?.data || err.message);
-  }
+  } catch {}
 
-  return totalShares;
-}
-
-function calculatePosts(posts, pageName, date) {
-  return posts
-    .filter((p) =>
-      p.pagina === pageName &&
-      new Date(p.fecha_inicio) <= date &&
-      (!p.fecha_final || new Date(p.fecha_final) >= date)
-    )
-    .reduce((sum, p) => sum + p.post_diarios, 0);
+  return total;
 }
 
 async function main() {
 
-  const { data: services } = await supabase
-    .from("pages_services")
-    .select("*");
-
-  const { data: pages } = await supabase
-    .from("pages")
-    .select("*");
-
-  const { data: postsProgramados } = await supabase
-    .from("post_programados_fb")
-    .select("*");
+  const { data: services } = await supabase.from("pages_services").select("*");
+  const { data: pages } = await supabase.from("pages").select("*");
+  const { data: postsProgramados } = await supabase.from("post_programados_fb").select("*");
 
   for (const service of services) {
 
-    const page = pages.find(
-      (p) => p.nombre === service.Nombre_pagina
-    );
-
+    const page = pages.find(p => p.nombre === service.Nombre_pagina);
     if (!page) continue;
 
     const pageId = page.id_page;
@@ -119,82 +87,54 @@ async function main() {
       ? new Date(service.fecha_termino_explotacion)
       : new Date();
 
-    for (
-      let d = new Date(startDate);
-      d <= endDate;
-      d = addDays(d, 1)
-    ) {
+    // 🔥 1. traer fechas YA existentes
+    const { data: existing } = await supabase
+      .from("reporte_diario")
+      .select("fecha")
+      .eq("pagina", service.Nombre_pagina);
+
+    const existingSet = new Set(
+      (existing || []).map(r => r.fecha)
+    );
+
+    // 🔥 2. SOLO días faltantes
+    for (let d = new Date(startDate); d <= endDate; d = addDays(d, 1)) {
 
       const day = formatDate(d);
       const nextDay = formatDate(addDays(d, 1));
 
-      // 🔥 SIEMPRE DEFINIDAS (FIX)
-      let impresiones = 0;
-      let reactions = 0;
-      let engagement = 0;
+      if (existingSet.has(day)) continue; // 🔥 SKIP
 
       try {
 
-        impresiones = await getMetric(
-          pageId,
-          token,
-          "page_impressions_unique",
-          day,
-          nextDay
-        ) || 0;
+        const impresiones = await getMetric(pageId, token, "page_impressions_unique", day, nextDay);
+        const reactions = await getMetric(pageId, token, "page_actions_post_reactions_like_total", day, nextDay);
+        const engagement = await getMetric(pageId, token, "page_post_engagements", day, nextDay);
+        const share = await getSharesByDay(pageId, token, day, nextDay);
 
-        reactions = await getMetric(
-          pageId,
-          token,
-          "page_actions_post_reactions_like_total",
-          day,
-          nextDay
-        ) || 0;
+        const post = postsProgramados
+          .filter(p =>
+            p.pagina === service.Nombre_pagina &&
+            new Date(p.fecha_inicio) <= d &&
+            (!p.fecha_final || new Date(p.fecha_final) >= d)
+          )
+          .reduce((s, p) => s + p.post_diarios, 0);
 
-        engagement = await getMetric(
-          pageId,
-          token,
-          "page_post_engagements",
-          day,
-          nextDay
-        ) || 0;
+        await supabase.from("reporte_diario").insert({
+          pagina: service.Nombre_pagina,
+          fecha: day,
+          impresiones,
+          reaction: reactions,
+          engagement,
+          post,
+          share,
+          engagement_real: engagement,
+        });
 
-        const post = calculatePosts(
-          postsProgramados,
-          service.Nombre_pagina,
-          d
-        );
-
-        const share = await getSharesByDay(
-          pageId,
-          token,
-          day,
-          nextDay
-        ) || 0;
-
-        await supabase.from("reporte_diario").upsert(
-          {
-            pagina: service.Nombre_pagina,
-            fecha: day,
-            impresiones,
-            reaction: reactions,
-            engagement,
-            post,
-            share,
-            engagement_real: engagement,
-          },
-          {
-            onConflict: "pagina,fecha",
-          }
-        );
-
-        console.log(`📊 OK ${service.Nombre_pagina} ${day}`);
+        console.log(`📊 NUEVO ${service.Nombre_pagina} ${day}`);
 
       } catch (err) {
-        console.error(
-          `❌ Error ${service.Nombre_pagina} ${day}:`,
-          err.message
-        );
+        console.error("ERROR:", err.message);
       }
     }
   }
