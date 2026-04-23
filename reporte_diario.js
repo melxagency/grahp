@@ -17,7 +17,7 @@ function addDays(date, days) {
   return d;
 }
 
-// 🔹 INSIGHTS
+// 🔹 INSIGHTS META
 async function getMetric(pageId, token, metric, since, until) {
   try {
     const res = await axios.get(
@@ -36,21 +36,65 @@ async function getMetric(pageId, token, metric, since, until) {
     const values = res.data.data?.[0]?.values || [];
     return values.reduce((sum, d) => sum + (d.value || 0), 0);
   } catch (err) {
-    console.error("INSIGHT ERROR:", err.response?.data || err.message);
+    console.error("INSIGHT ERROR:", metric, err.response?.data || err.message);
     return 0;
   }
 }
 
+// 🔹 SHARES REALES POR DÍA
+async function getSharesByDay(pageId, token, since, until) {
+  let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
+  let totalShares = 0;
+
+  while (url) {
+    const res = await axios.get(url, {
+      params: {
+        fields: "shares,created_time",
+        since,
+        until,
+        limit: 100,
+        access_token: token,
+      },
+    });
+
+    const posts = res.data.data || [];
+
+    for (const post of posts) {
+      totalShares += post.shares?.count || 0;
+    }
+
+    url = res.data.paging?.next || null;
+  }
+
+  return totalShares;
+}
+
+// 🔹 POSTS PROGRAMADOS ACTIVOS
+function calculatePosts(postRows, pageName, date) {
+  return postRows
+    .filter((p) => {
+      return (
+        p.pagina === pageName &&
+        new Date(p.fecha_inicio) <= date &&
+        (!p.fecha_final || new Date(p.fecha_final) >= date)
+      );
+    })
+    .reduce((sum, p) => sum + p.post_diarios, 0);
+}
+
 async function main() {
 
-  // 📦 servicios
+  // 📦 data
   const { data: services } = await supabase
     .from("pages_services")
     .select("*");
 
-  // 📦 páginas
   const { data: pages } = await supabase
     .from("pages")
+    .select("*");
+
+  const { data: postsProgramados } = await supabase
+    .from("post_programados_fb")
     .select("*");
 
   for (const service of services) {
@@ -66,23 +110,11 @@ async function main() {
 
     if (!pageId || !token) continue;
 
-    // 📅 rango
     const startDate = new Date(service.fecha_inicio_explotacion);
     const endDate = service.fecha_termino_explotacion
       ? new Date(service.fecha_termino_explotacion)
       : new Date();
 
-    // 📥 traer lo que YA existe
-    const { data: existing } = await supabase
-      .from("reporte_diario")
-      .select("fecha")
-      .eq("pagina", service.Nombre_pagina);
-
-    const existingSet = new Set(
-      (existing || []).map((r) => r.fecha)
-    );
-
-    // 🔁 recorrer solo huecos
     for (
       let d = new Date(startDate);
       d <= endDate;
@@ -90,11 +122,9 @@ async function main() {
     ) {
       const day = formatDate(d);
 
-      // 🚫 si ya existe, skip
-      if (existingSet.has(day)) continue;
-
       try {
 
+        // 📊 métricas META
         const impressions = await getMetric(
           pageId,
           token,
@@ -119,17 +149,47 @@ async function main() {
           day
         );
 
-        await supabase.from("reporte_diario").insert({
-          pagina: service.Nombre_pagina,
-          fecha: day,
-          impresiones: impressions,
-          reaction: reactions,
-          engagement: engagement,
-          share: 0,
-          engagement_real: engagement,
-        });
+        // 🔥 POSTS PROGRAMADOS
+        const post = calculatePosts(
+          postsProgramados,
+          service.Nombre_pagina,
+          d
+        );
 
-        console.log(`➕ FILL ${service.Nombre_pagina} ${day}`);
+        // 🔥 SHARES REALES DEL DÍA
+        const share = await getSharesByDay(
+          pageId,
+          token,
+          day,
+          day
+        );
+
+        // 💾 UPSERT FINAL
+        const { error } = await supabase
+          .from("reporte_diario")
+          .upsert(
+            {
+              pagina: service.Nombre_pagina,
+              fecha: day,
+              impresiones,
+              reaction: reactions,
+              engagement,
+              post,
+              share,
+              engagement_real: engagement,
+            },
+            {
+              onConflict: "pagina,fecha",
+            }
+          );
+
+        if (error) {
+          console.error("UPSERT ERROR:", error);
+        } else {
+          console.log(
+            `📊 OK ${service.Nombre_pagina} ${day}`
+          );
+        }
 
       } catch (err) {
         console.error(
