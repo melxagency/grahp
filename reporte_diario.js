@@ -6,10 +6,10 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-// 📅 HOY (día único)
+// 📅 Día actual
 const today = new Date().toISOString().split("T")[0];
 
-// 🔧 INSIGHTS (seguro y estable)
+// 🔹 INSIGHTS STABLE
 async function getMetric(pageId, token, metric, since, until) {
   try {
     const res = await axios.get(
@@ -27,40 +27,60 @@ async function getMetric(pageId, token, metric, since, until) {
 
     const values = res.data.data?.[0]?.values || [];
 
-    return values.reduce(
-      (sum, d) => sum + (d.value || 0),
-      0
-    );
+    return values.reduce((sum, d) => sum + (d.value || 0), 0);
   } catch (err) {
-    console.error("INSIGHT ERROR:", metric, err.response?.data || err.message);
+    console.error(
+      `❌ INSIGHT ERROR (${metric})`,
+      err.response?.data || err.message
+    );
     return 0;
   }
 }
 
 // 🚀 MAIN
 async function main() {
-  const { data: services, error } = await supabase
+  // 📦 servicios activos
+  const { data: services, error: err1 } = await supabase
     .from("pages_services")
     .select("*");
 
-  if (error) {
-    console.error("Supabase error:", error);
+  if (err1) {
+    console.error("Supabase services error:", err1);
+    return;
+  }
+
+  // 📦 páginas con credenciales
+  const { data: pages, error: err2 } = await supabase
+    .from("pages")
+    .select("*");
+
+  if (err2) {
+    console.error("Supabase pages error:", err2);
     return;
   }
 
   for (const service of services) {
+    // 🔥 match por nombre
+    const page = pages.find(
+      (p) => p.nombre === service.Nombre_pagina
+    );
 
-    // 🧨 VALIDACIÓN CRÍTICA
-    if (!service.id_page || !service.token_page) {
-      console.log("❌ Página incompleta:", service);
+    if (!page) {
+      console.log("❌ No existe en pages:", service.Nombre_pagina);
       continue;
     }
 
-    const pageId = service.id_page;
-    const token = service.token_page;
+    const pageId = page.id_page;
+    const token = page.token; // ✅ FIX DEFINITIVO
+
+    // 🧨 validación extra
+    if (!pageId || !token) {
+      console.log("❌ Página incompleta:", service.Nombre_pagina);
+      continue;
+    }
 
     try {
-      // 📊 SOLO DÍA ACTUAL
+      // 📊 métricas del día
       const impressions = await getMetric(
         pageId,
         token,
@@ -85,17 +105,13 @@ async function main() {
         today
       );
 
-      // 🔥 SIN POSTS (evita errores de Graph API)
-      const shares = 0;
-
       console.log(`📊 ${service.Nombre_pagina}`, {
         impressions,
         reactions,
         engagement,
-        shares,
       });
 
-      // 💾 INSERT EN REPORTE DIARIO
+      // 💾 insert diario
       const { error: insertError } = await supabase
         .from("reporte_diario")
         .insert({
@@ -103,7 +119,7 @@ async function main() {
           impresiones: impressions,
           reaction: reactions,
           engagement: engagement,
-          share: shares,
+          share: 0,
           engagement_real: engagement,
           fecha: today,
         });
@@ -114,7 +130,7 @@ async function main() {
 
     } catch (err) {
       console.error(
-        `Error en ${service.Nombre_pagina}:`,
+        `❌ Error en ${service.Nombre_pagina}:`,
         err.response?.data || err.message
       );
     }
