@@ -41,7 +41,7 @@ async function getMetric(pageId, token, metric, since, until) {
   }
 }
 
-// 🔹 SHARES REALES POR DÍA
+// 🔹 SHARES POR POSTS DEL DÍA
 async function getSharesByDay(pageId, token, since, until) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
   let totalShares = 0;
@@ -69,9 +69,9 @@ async function getSharesByDay(pageId, token, since, until) {
   return totalShares;
 }
 
-// 🔹 POSTS PROGRAMADOS ACTIVOS
-function calculatePosts(postRows, pageName, date) {
-  return postRows
+// 🔥 POSTS PROGRAMADOS ACTIVOS
+function calculatePosts(posts, pageName, date) {
+  return posts
     .filter((p) => {
       return (
         p.pagina === pageName &&
@@ -84,7 +84,6 @@ function calculatePosts(postRows, pageName, date) {
 
 async function main() {
 
-  // 📦 data
   const { data: services } = await supabase
     .from("pages_services")
     .select("*");
@@ -121,16 +120,17 @@ async function main() {
       d = addDays(d, 1)
     ) {
       const day = formatDate(d);
+      const nextDay = formatDate(addDays(d, 1)); // 🔥 FIX CLAVE
 
       try {
 
-        // 📊 métricas META
+        // 📊 INSIGHTS CORRECTOS
         const impressions = await getMetric(
           pageId,
           token,
           "page_impressions_unique",
           day,
-          day
+          nextDay
         );
 
         const reactions = await getMetric(
@@ -138,7 +138,7 @@ async function main() {
           token,
           "page_actions_post_reactions_like_total",
           day,
-          day
+          nextDay
         );
 
         const engagement = await getMetric(
@@ -146,7 +146,7 @@ async function main() {
           token,
           "page_post_engagements",
           day,
-          day
+          nextDay
         );
 
         // 🔥 POSTS PROGRAMADOS
@@ -156,12 +156,12 @@ async function main() {
           d
         );
 
-        // 🔥 SHARES REALES DEL DÍA
+        // 🔥 SHARES DEL DÍA
         const share = await getSharesByDay(
           pageId,
           token,
           day,
-          day
+          nextDay
         );
 
         // 💾 UPSERT FINAL
@@ -186,9 +186,7 @@ async function main() {
         if (error) {
           console.error("UPSERT ERROR:", error);
         } else {
-          console.log(
-            `📊 OK ${service.Nombre_pagina} ${day}`
-          );
+          console.log(`📊 OK ${service.Nombre_pagina} ${day}`);
         }
 
       } catch (err) {
