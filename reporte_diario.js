@@ -7,25 +7,14 @@ const supabase = createClient(
 );
 
 // =========================
-// 🧠 HELPERS
-// =========================
-const formatDate = (d) =>
-  new Date(d).toISOString().split("T")[0];
-
-const addDays = (date, days) => {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return d;
-};
-
-// =========================
-// 🇨🇺 DÍA CUBA (UTC-5)
+// 🇨🇺 FECHA CUBA
 // =========================
 function getCubaDate() {
   const now = new Date();
   const cubaOffsetMs = -5 * 60 * 60 * 1000;
-  const cubaTime = new Date(now.getTime() + cubaOffsetMs);
-  return cubaTime.toISOString().split("T")[0];
+  return new Date(now.getTime() + cubaOffsetMs)
+    .toISOString()
+    .split("T")[0];
 }
 
 // =========================
@@ -48,14 +37,13 @@ async function getMetric(pageId, token, metric, since, until) {
 
     const values = res.data.data?.[0]?.values || [];
     return values.reduce((s, d) => s + (d.value || 0), 0);
-  } catch (err) {
-    console.log("METRIC ERROR:", err.message);
+  } catch {
     return 0;
   }
 }
 
 // =========================
-// 🔥 SHARES TOTALES (TODOS LOS POSTS)
+// 🔥 SHARE ACUMULADO TOTAL
 // =========================
 async function getTotalShares(pageId, token) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
@@ -71,56 +59,29 @@ async function getTotalShares(pageId, token) {
         },
       });
 
-      const posts = res.data.data || [];
-
-      for (const post of posts) {
+      for (const post of res.data.data || []) {
         total += post.shares?.count || 0;
       }
 
       url = res.data.paging?.next || null;
     }
-  } catch (err) {
-    console.log("SHARE ERROR:", err.message);
-  }
+  } catch {}
 
   return total;
 }
 
 // =========================
-// 💾 GUARDAR SHARE SNAPSHOT
-// =========================
-async function saveDailyShare(pageName, share, date) {
-  const payload = {
-    pagina: pageName,
-    fecha: date,
-    share: share ?? 0,
-    created_at: new Date().toISOString(),
-  };
-
-  const { error } = await supabase
-    .from("acumulado_share_diarios")
-    .upsert(payload, {
-      onConflict: "pagina,fecha",
-    });
-
-  if (error) {
-    console.log("❌ SHARE ERROR DB:", error.message);
-  } else {
-    console.log("✅ SHARE OK:", pageName, date, share);
-  }
-}
-
-// =========================
-// 🚀 MAIN (SOLO DÍA ACTUAL CUBA)
+// 🚀 MAIN
 // =========================
 async function main() {
-
   const { data: services } = await supabase.from("pages_services").select("*");
   const { data: pages } = await supabase.from("pages").select("*");
   const { data: postsProgramados } = await supabase.from("post_programados_fb").select("*");
 
   const day = getCubaDate();
-  const nextDay = formatDate(addDays(new Date(day), 1));
+  const nextDay = new Date(new Date(day).getTime() + 24 * 60 * 60 * 1000)
+    .toISOString()
+    .split("T")[0];
 
   for (const service of services) {
 
@@ -135,19 +96,14 @@ async function main() {
     try {
 
       // =========================
-      // 📊 METRICS DEL DÍA
+      // 📊 METRICS
       // =========================
       const impresiones = await getMetric(pageId, token, "page_impressions_unique", day, nextDay);
       const reactions = await getMetric(pageId, token, "page_actions_post_reactions_like_total", day, nextDay);
       const engagement = await getMetric(pageId, token, "page_post_engagements", day, nextDay);
 
       // =========================
-      // 🔥 SHARES ACUMULADOS TOTALES
-      // =========================
-      const share = await getTotalShares(pageId, token);
-
-      // =========================
-      // 🧠 POSTS PROGRAMADOS
+      // 🧠 POSTS
       // =========================
       const post = postsProgramados
         .filter(p =>
@@ -158,7 +114,12 @@ async function main() {
         .reduce((s, p) => s + p.post_diarios, 0);
 
       // =========================
-      // 💾 REPORTE DIARIO
+      // 🔥 SOLO SHARE ACUMULADO
+      // =========================
+      const share_acumulado = await getTotalShares(pageId, token);
+
+      // =========================
+      // 💾 REPORTE DIARIO (SIN SHARE)
       // =========================
       await supabase.from("reporte_diario").upsert({
         pagina: service.Nombre_pagina,
@@ -167,21 +128,27 @@ async function main() {
         reaction: reactions,
         engagement,
         post,
-        share,
-        engagement_real: engagement,
+        engagement_real: engagement
       }, {
         onConflict: "pagina,fecha",
       });
 
       // =========================
-      // 📊 SHARE SNAPSHOT DIARIO
+      // 📊 ACUMULADO SHARE DIARIO
       // =========================
-      await saveDailyShare(service.Nombre_pagina, share, day);
+      await supabase.from("acumulado_share_diarios").upsert({
+        pagina: service.Nombre_pagina,
+        fecha: day,
+        share: share_acumulado,
+        created_at: new Date().toISOString(),
+      }, {
+        onConflict: "pagina,fecha",
+      });
 
-      console.log(`📊 OK ${service.Nombre_pagina} ${day}`);
+      console.log(`OK ${service.Nombre_pagina} ${day}`);
 
     } catch (err) {
-      console.log(`❌ ERROR ${service.Nombre_pagina}:`, err.message);
+      console.log(`ERROR ${service.Nombre_pagina}:`, err.message);
     }
   }
 }
