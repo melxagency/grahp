@@ -18,32 +18,39 @@ function getCubaDate() {
 }
 
 // =========================
-// 📊 METRICS META (ACUMULADO)
+// 📊 METRICS META (LIFETIME)
 // =========================
-async function getMetric(pageId, token, metric, since, until) {
+async function getMetric(pageId, token, metric) {
   try {
     const res = await axios.get(
       `https://graph.facebook.com/v19.0/${pageId}/insights`,
       {
         params: {
           metric,
-          period: "day",
-          since,
-          until,
+          period: "lifetime",
           access_token: token,
         },
       }
     );
 
     const values = res.data.data?.[0]?.values || [];
-    return values.reduce((s, d) => s + (d.value || 0), 0);
+
+    // algunos vienen como objeto {value: {total: X}}
+    const value = values[0]?.value;
+
+    if (typeof value === "object") {
+      return value?.total || 0;
+    }
+
+    return value || 0;
+
   } catch {
     return 0;
   }
 }
 
 // =========================
-// 🔥 SHARE TOTAL ACUMULADO
+// 🔥 SHARE TOTAL REAL
 // =========================
 async function getTotalShares(pageId, token) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
@@ -71,97 +78,69 @@ async function getTotalShares(pageId, token) {
 }
 
 // =========================
-// 🚀 MAIN (ACUMULADO)
+// 🚀 MAIN
 // =========================
 async function main() {
 
-  const { data: services } = await supabase.from("pages_services").select("*");
   const { data: pages } = await supabase.from("pages").select("*");
-  const { data: postsProgramados } = await supabase.from("post_programados_fb").select("*");
-
   const today = getCubaDate();
 
-  for (const service of services) {
-
-    const page = pages.find(p => p.nombre === service.Nombre_pagina);
-    if (!page) continue;
+  for (const page of pages) {
 
     const pageId = page.id_page;
     const token = page.token;
 
     if (!pageId || !token) continue;
 
-    const startDate = service.fecha_inicio_explotacion;
-
     try {
 
       // =========================
-      // 📊 MÉTRICAS ACUMULADAS
+      // 📊 MÉTRICAS TOTALES
       // =========================
-      const impresiones = await getMetric(pageId, token, "page_impressions_unique", startDate, today);
-      const reactions = await getMetric(pageId, token, "page_actions_post_reactions_like_total", startDate, today);
-      const engagement = await getMetric(pageId, token, "page_post_engagements", startDate, today);
+      const impresiones = await getMetric(pageId, token, "page_impressions");
+      const reactions = await getMetric(pageId, token, "page_actions_post_reactions_like_total");
+      const engagement = await getMetric(pageId, token, "page_post_engagements");
 
       // =========================
-      // 🧠 POSTS ACUMULADOS
-      // =========================
-      const totalPosts = postsProgramados
-        .filter(p =>
-          p.pagina === service.Nombre_pagina &&
-          new Date(p.fecha_inicio) <= new Date(today)
-        )
-        .reduce((s, p) => {
-          const inicio = new Date(p.fecha_inicio);
-          const fin = p.fecha_final ? new Date(p.fecha_final) : new Date(today);
-
-          const dias = Math.max(
-            0,
-            Math.floor((Math.min(fin, new Date(today)) - inicio) / (1000 * 60 * 60 * 24)) + 1
-          );
-
-          return s + (dias * p.post_diarios);
-        }, 0);
-
-      // =========================
-      // 🔥 SHARE ACUMULADO
+      // 🔥 SHARE TOTAL
       // =========================
       const share = await getTotalShares(pageId, token);
 
       // =========================
-      // 🧾 INSERT / UPDATE ACUMULADO
+      // 🧾 UPSERT
       // =========================
-      const { data: existing } = await supabase
-        .from("reporte_diario_acumulado")
-        .select("id_record")
-        .eq("pagina", service.Nombre_pagina)
-        .maybeSingle();
-
       const payload = {
-        pagina: service.Nombre_pagina,
+        pagina: page.nombre,
         fecha: today,
         impresiones,
         reaction: reactions,
         engagement,
         engagement_real: engagement,
         share,
-        post: totalPosts,
+        post: 0, // ya no calculamos posts
         created_at: new Date().toISOString()
       };
 
+      const { data: existing } = await supabase
+        .from("reporte_diario_acumulado")
+        .select("id_record")
+        .eq("pagina", page.nombre)
+        .maybeSingle();
+
       if (!existing) {
         await supabase.from("reporte_diario_acumulado").insert(payload);
-        console.log(`📊 INSERT ACUMULADO ${service.Nombre_pagina}`);
+        console.log(`📊 INSERT ${page.nombre}`);
       } else {
         await supabase
           .from("reporte_diario_acumulado")
           .update(payload)
-          .eq("pagina", service.Nombre_pagina);
+          .eq("pagina", page.nombre);
 
-        console.log(`🔄 UPDATE ACUMULADO ${service.Nombre_pagina}`);
+        console.log(`🔄 UPDATE ${page.nombre}`);
       }
 
     } catch (err) {
-      console.log(`❌ ERROR ${service.Nombre_pagina}:`, err.message);
+      console.log(`❌ ERROR ${page.nombre}:`, err.message);
     }
   }
 }
