@@ -6,6 +6,7 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
+// 📅 helpers
 const formatDate = (d) =>
   new Date(d).toISOString().split("T")[0];
 
@@ -68,6 +69,18 @@ async function getSharesByDay(pageId, token, since, until) {
 
 async function main() {
 
+  // 🇨🇺 Hora actual en Cuba
+  const now = new Date();
+  const cubaOffset = -4 * 60;
+  const cubaTime = new Date(now.getTime() + cubaOffset * 60000);
+
+  // 🔥 Ayer en Cuba
+  const yesterdayCuba = new Date(cubaTime);
+  yesterdayCuba.setDate(yesterdayCuba.getDate() - 1);
+
+  console.log("🗓 Cuba hoy:", formatDate(cubaTime));
+  console.log("🗓 Procesando hasta:", formatDate(yesterdayCuba));
+
   const { data: services } = await supabase.from("pages_services").select("*");
   const { data: pages } = await supabase.from("pages").select("*");
   const { data: postsProgramados } = await supabase.from("post_programados_fb").select("*");
@@ -83,11 +96,17 @@ async function main() {
     if (!pageId || !token) continue;
 
     const startDate = new Date(service.fecha_inicio_explotacion);
-    const endDate = service.fecha_termino_explotacion
-      ? new Date(service.fecha_termino_explotacion)
-      : new Date();
 
-    // 🔥 1. traer fechas YA existentes
+    // 🔥 END DATE CORREGIDO (NUNCA HOY)
+    let endDate = service.fecha_termino_explotacion
+      ? new Date(service.fecha_termino_explotacion)
+      : yesterdayCuba;
+
+    if (endDate > yesterdayCuba) {
+      endDate = new Date(yesterdayCuba);
+    }
+
+    // 🔥 Fechas existentes
     const { data: existing } = await supabase
       .from("reporte_diario")
       .select("fecha")
@@ -97,13 +116,17 @@ async function main() {
       (existing || []).map(r => r.fecha)
     );
 
-    // 🔥 2. SOLO días faltantes
+    // 🔥 LOOP DÍAS
     for (let d = new Date(startDate); d <= endDate; d = addDays(d, 1)) {
 
       const day = formatDate(d);
       const nextDay = formatDate(addDays(d, 1));
 
-      if (existingSet.has(day)) continue; // 🔥 SKIP
+      // 🔥 NUNCA HOY
+      if (day === formatDate(cubaTime)) continue;
+
+      // 🔥 SI YA EXISTE, SKIP
+      if (existingSet.has(day)) continue;
 
       try {
 
@@ -134,7 +157,7 @@ async function main() {
         console.log(`📊 NUEVO ${service.Nombre_pagina} ${day}`);
 
       } catch (err) {
-        console.error("ERROR:", err.message);
+        console.error(`❌ Error ${service.Nombre_pagina} ${day}:`, err.message);
       }
     }
   }
