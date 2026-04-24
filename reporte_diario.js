@@ -7,18 +7,19 @@ const supabase = createClient(
 );
 
 // =========================
-// 🇨🇺 FECHA CUBA
+// 🇨🇺 FECHA CUBA REAL (FIX)
 // =========================
 function getCubaDate() {
-  const now = new Date();
-  const cubaOffsetMs = -5 * 60 * 60 * 1000;
-  return new Date(now.getTime() + cubaOffsetMs)
-    .toISOString()
-    .split("T")[0];
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Havana",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 }
 
 // =========================
-// 📊 METRICS CORRECTAS
+// 📊 METRICS META
 // =========================
 async function getMetric(pageId, token, metric, since, until) {
   try {
@@ -35,21 +36,17 @@ async function getMetric(pageId, token, metric, since, until) {
       }
     );
 
-    const values = res.data.data?.[0]?.values || [];
+    const values = res.data?.data?.[0]?.values || [];
 
-    return values.reduce((sum, v) => {
-      if (typeof v.value === "number") return sum + v.value;
-      if (typeof v.value === "object") return sum + (v.value.total || 0);
-      return sum + (v.value || 0);
-    }, 0);
-
+    return values.reduce((sum, v) => sum + Number(v.value || 0), 0);
   } catch (err) {
+    console.log("METRIC ERROR:", metric, err.response?.data || err.message);
     return 0;
   }
 }
 
 // =========================
-// 🔥 SHARE TOTAL (OK)
+// 🔥 SHARES ACUMULADOS
 // =========================
 async function getTotalShares(pageId, token) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
@@ -71,101 +68,80 @@ async function getTotalShares(pageId, token) {
 
       url = res.data.paging?.next || null;
     }
-  } catch {}
+  } catch (err) {
+    console.log("SHARE ERROR:", err.message);
+  }
 
   return total;
 }
 
 // =========================
-// 🚀 MAIN
+// 🚀 MAIN ACUMULADO GLOBAL
 // =========================
 async function main() {
 
   const { data: pages } = await supabase.from("pages").select("*");
-  const today = getCubaDate();
 
-  // rango amplio REAL
-  const since = "2000-01-01";
-  const until = today;
+  let totalImpresiones = 0;
+  let totalReactions = 0;
+  let totalEngagement = 0;
+  let totalShares = 0;
+
+  const today = getCubaDate();
+  const yesterday = today; // acumulado hasta hoy
 
   for (const page of pages) {
-
     const pageId = page.id_page;
     const token = page.token;
 
     if (!pageId || !token) continue;
 
-    try {
+    // 📊 MÉTRICAS ACUMULADAS POR PÁGINA
+    const impresiones = await getMetric(
+      pageId,
+      token,
+      "page_impressions_unique",
+      "2000-01-01",
+      yesterday
+    );
 
-      // =========================
-      // 📊 MÉTRICAS CORRECTAS
-      // =========================
-      const impresiones = await getMetric(
-        pageId,
-        token,
-        "page_impressions_unique",
-        since,
-        until
-      );
+    const engagement = await getMetric(
+      pageId,
+      token,
+      "page_post_engagements",
+      "2000-01-01",
+      yesterday
+    );
 
-      const reactions = await getMetric(
-        pageId,
-        token,
-        "page_actions_post_reactions_like_total",
-        since,
-        until
-      );
+    const reactions = await getMetric(
+      pageId,
+      token,
+      "page_actions_post_reactions_total",
+      "2000-01-01",
+      yesterday
+    );
 
-      const engagement = await getMetric(
-        pageId,
-        token,
-        "page_post_engagements",
-        since,
-        until
-      );
+    const shares = await getTotalShares(pageId, token);
 
-      // =========================
-      // 🔥 SHARE
-      // =========================
-      const share = await getTotalShares(pageId, token);
-
-      // =========================
-      // 🧾 UPSERT
-      // =========================
-      const payload = {
-        pagina: page.nombre,
-        fecha: today,
-        impresiones,
-        reaction: reactions,
-        engagement,
-        engagement_real: engagement,
-        share,
-        post: 0,
-        created_at: new Date().toISOString()
-      };
-
-      const { data: existing } = await supabase
-        .from("reporte_diario_acumulado")
-        .select("id_record")
-        .eq("pagina", page.nombre)
-        .maybeSingle();
-
-      if (!existing) {
-        await supabase.from("reporte_diario_acumulado").insert(payload);
-        console.log(`📊 INSERT ${page.nombre}`);
-      } else {
-        await supabase
-          .from("reporte_diario_acumulado")
-          .update(payload)
-          .eq("pagina", page.nombre);
-
-        console.log(`🔄 UPDATE ${page.nombre}`);
-      }
-
-    } catch (err) {
-      console.log(`❌ ERROR ${page.nombre}:`, err.message);
-    }
+    totalImpresiones += impresiones;
+    totalReactions += reactions;
+    totalEngagement += engagement;
+    totalShares += shares;
   }
+
+  // =========================
+  // 💾 INSERT ACUMULADO GLOBAL
+  // =========================
+  await supabase.from("reporte_diario_acumulado").insert({
+    fecha: today,
+    impresiones: totalImpresiones,
+    reaction: totalReactions,
+    engagement: totalEngagement,
+    share: totalShares,
+    created_at: new Date().toISOString(),
+  });
+
+  console.log("✅ REPORTE ACUMULADO GUARDADO");
 }
 
 main();
