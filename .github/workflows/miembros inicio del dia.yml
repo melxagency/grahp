@@ -36,8 +36,11 @@ jobs:
             -H "Authorization: Bearer ${SUPABASE_KEY}" \
             > groups.json
 
+          echo "📦 RAW GROUPS:"
+          cat groups.json
+
       # =========================
-      # 4. FETCH FACEBOOK DATA (SAFE)
+      # 4. FETCH FACEBOOK DATA
       # =========================
       - name: Fetch Facebook data
         env:
@@ -57,21 +60,16 @@ jobs:
 
             COUNT=$(echo "$RESPONSE" | jq -r '.member_count // empty')
 
-            echo "👥 RAW COUNT: $COUNT"
+            echo "👥 COUNT: $COUNT"
 
-            # =========================
-            # 🔥 VALIDACIONES IMPORTANTES
-            # =========================
-
-            # Si viene vacío o null → saltar
+            # validar
             if [ -z "$COUNT" ] || [ "$COUNT" = "null" ]; then
-              echo "⚠️ Skipping $GROUP_ID (invalid response)"
+              echo "⚠️ Skip $GROUP_ID (invalid)"
               continue
             fi
 
-            # Si es 0 → NO actualizar (evita borrados falsos)
             if [ "$COUNT" -eq 0 ]; then
-              echo "⚠️ Skipping $GROUP_ID (0 detected - likely API limit)"
+              echo "⚠️ Skip $GROUP_ID (0 detected)"
               continue
             fi
 
@@ -82,34 +80,48 @@ jobs:
           done
 
           echo "$RESULT" > update_payload.json
+          echo "📦 FINAL PAYLOAD:"
+          cat update_payload.json
 
       # =========================
-      # 5. UPDATE ONE BY ONE (SAFE)
+      # 5. UPDATE SUPABASE (FIXED)
       # =========================
       - name: Update Supabase one by one
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          echo "🚀 Updating groups one by one..."
+          echo "🚀 Updating groups..."
 
           for row in $(jq -c '.[]' update_payload.json); do
+
             GROUP_ID=$(echo "$row" | jq -r '.id_group')
             COUNT=$(echo "$row" | jq -r '.miembros_inicio_dia')
 
-            echo "📦 Updating $GROUP_ID → $COUNT"
+            echo "📦 Checking group $GROUP_ID"
 
-            RESPONSE=$(curl -s -o response.txt -w "%{http_code}" -X PATCH \
+            # =========================
+            # CHECK EXISTENCE
+            # =========================
+            CHECK=$(curl -s \
+              "${SUPABASE_URL}/rest/v1/facebook_groups?select=id_group&id_group=eq.${GROUP_ID}" \
+              -H "apikey: ${SUPABASE_KEY}" \
+              -H "Authorization: Bearer ${SUPABASE_KEY}")
+
+            echo "CHECK RESULT: $CHECK"
+
+            # =========================
+            # UPDATE
+            # =========================
+            RESPONSE=$(curl -s -X PATCH \
               "${SUPABASE_URL}/rest/v1/facebook_groups?id_group=eq.${GROUP_ID}" \
               -H "apikey: ${SUPABASE_KEY}" \
               -H "Authorization: Bearer ${SUPABASE_KEY}" \
               -H "Content-Type: application/json" \
-              -H "Prefer: return=minimal" \
-              -d "{\"miembros_actuales\": $COUNT}")
+              -H "Prefer: return=representation" \
+              -d "{\"miembros_actuales\": ${COUNT}}")
 
-            echo "HTTP: $RESPONSE"
+            echo "🟢 UPDATE RESPONSE: $RESPONSE"
           done
 
-          echo "🎉 All valid groups updated"
-
-  
+          echo "🎉 DONE"
