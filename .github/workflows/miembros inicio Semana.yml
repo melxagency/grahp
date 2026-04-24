@@ -1,92 +1,104 @@
-name: Miembros Inicio Semana
+name: Miembros Inicio de la semana
+
 on:
-  schedule:
-   - cron: "0 8 * * 1"
   workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1' # Lunes 1:00 AM hora de Cuba
+
 jobs:
   count-members:
     runs-on: ubuntu-latest
+
     steps:
+      # =========================
+      # 1. CHECKOUT
+      # =========================
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # =========================
+      # 2. INSTALL TOOLS
+      # =========================
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
+
+      # =========================
+      # 3. FETCH GROUPS
+      # =========================
       - name: Fetch Group IDs from Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          echo "📡 Fetching group IDs from Supabase..."
-          RESPONSE=$(curl -s \
+          echo "📡 Fetching group IDs..."
+
+          curl -s \
             "${SUPABASE_URL}/rest/v1/facebook_groups?select=id_group&limit=1000" \
             -H "apikey: ${SUPABASE_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_KEY}" \
-            -H "Content-Type: application/json" \
-            -H "Range: 0-999")
-          GROUP_IDS=$(echo "$RESPONSE" | jq -r '.[].id_group')
-          if [ -z "$GROUP_IDS" ]; then
-            echo "❌ No group IDs found in Supabase. Aborting."
-            exit 1
-          fi
-          echo "✅ Group IDs found:"
-          echo "$GROUP_IDS"
-          echo "$GROUP_IDS" > group_ids.txt
+            > groups.json
 
-      - name: Fetch Facebook Group Members and Update miembros_inicio_mes
+      # =========================
+      # 4. FETCH FACEBOOK DATA
+      # =========================
+      - name: Fetch Facebook data
         env:
           FACEBOOK_TOKEN: ${{ secrets.FACEBOOK_TOKEN }}
+        run: |
+          echo "🔎 Processing Facebook groups..."
+
+          RESULT="[]"
+
+          for row in $(jq -c '.[]' groups.json); do
+            GROUP_ID=$(echo "$row" | jq -r '.id_group')
+
+            RESPONSE=$(curl -s \
+              "https://graph.facebook.com/v25.0/${GROUP_ID}?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+
+            COUNT=$(echo "$RESPONSE" | jq -r '.member_count // empty')
+
+            # VALIDACIONES
+            if [ -z "$COUNT" ] || [ "$COUNT" = "null" ]; then
+              continue
+            fi
+
+            if [ "$COUNT" -eq 0 ]; then
+              continue
+            fi
+
+            RESULT=$(echo "$RESULT" | jq \
+              --arg id "$GROUP_ID" \
+              --argjson count "$COUNT" \
+              '. + [{"id_group": $id, "miembros_inicio_semana": $count}]')
+          done
+
+          echo "$RESULT" > update_payload.json
+
+      # =========================
+      # 5. UPDATE SUPABASE
+      # =========================
+      - name: Update Supabase (inicio de semana)
+        env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          echo "🔎 Registrando miembros inicio de mes..."
-          TOTAL=0
-          UPDATED=0
-          ERRORS=0
-          echo "-----------------------------"
-          while IFS= read -r GROUP_ID; do
-            [ -z "$GROUP_ID" ] && continue
-            echo "📦 Group: $GROUP_ID"
-            RESPONSE=$(curl -s "https://graph.facebook.com/v25.0/${GROUP_ID}?fields=member_count&access_token=${FACEBOOK_TOKEN}")
-            echo "$RESPONSE"
-            ERROR=$(echo "$RESPONSE" | jq '.error // empty')
-            if [ -n "$ERROR" ]; then
-              echo "⚠️ Error fetching group $GROUP_ID: $ERROR"
-              CODE=$(echo "$RESPONSE" | jq '.error.code')
-              if [ "$CODE" = "4" ]; then
-                echo "⏳ Rate limit hit, waiting 5 minutes..."
-                sleep 300
-              fi
-              ERRORS=$((ERRORS + 1))
-              echo "-----------------------------"
-              continue
-            fi
-            COUNT=$(echo "$RESPONSE" | jq '.member_count // 0')
-            if [ "$COUNT" -gt 0 ]; then
-              echo "👥 Members: $COUNT"
-              UPDATE_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
-                -X PATCH \
-                "${SUPABASE_URL}/rest/v1/facebook_groups?id_group=eq.${GROUP_ID}" \
-                -H "apikey: ${SUPABASE_KEY}" \
-                -H "Authorization: Bearer ${SUPABASE_KEY}" \
-                -H "Content-Type: application/json" \
-                -H "Prefer: return=minimal" \
-                -d "{\"miembros_inicio_semana\": ${COUNT}}")
-              if [ "$UPDATE_RESPONSE" = "204" ]; then
-                echo "✅ Updated miembros_inicio_mes in Supabase"
-                UPDATED=$((UPDATED + 1))
-              else
-                echo "❌ Failed to update Supabase (HTTP $UPDATE_RESPONSE)"
-                ERRORS=$((ERRORS + 1))
-              fi
-              TOTAL=$((TOTAL + COUNT))
-            else
-              echo "⚠️ Skipping update for group $GROUP_ID (count = 0)"
-            fi
-            echo "-----------------------------"
-            sleep 1
-          done < group_ids.txt
-          echo "============================="
-          echo "📊 TOTAL MEMBERS: $TOTAL"
-          echo "✅ UPDATED: $UPDATED groups"
-          echo "❌ ERRORS: $ERRORS groups"
-          echo "============================="
+          echo "🚀 Updating inicio de semana..."
+
+          for row in $(jq -c '.[]' update_payload.json); do
+
+            GROUP_ID=$(echo "$row" | jq -r '.id_group')
+            COUNT=$(echo "$row" | jq -r '.miembros_inicio_semana')
+
+            echo "📦 Updating $GROUP_ID → $COUNT"
+
+            curl -s -X PATCH \
+              "${SUPABASE_URL}/rest/v1/facebook_groups?id_group=eq.${GROUP_ID}" \
+              -H "apikey: ${SUPABASE_KEY}" \
+              -H "Authorization: Bearer ${SUPABASE_KEY}" \
+              -H "Content-Type: application/json" \
+              -H "Prefer: return=minimal" \
+              -d "{\"miembros_inicio_semana\": ${COUNT}}"
+
+          done
+
+          echo "🎉 DONE"
