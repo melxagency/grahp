@@ -114,7 +114,7 @@ async function main() {
         .reduce((s, p) => s + p.post_diarios, 0);
 
       // =========================
-      // 🔥 SOLO SHARE ACUMULADO
+      // 🔥 SHARE ACUMULADO
       // =========================
       const share_acumulado = await getTotalShares(pageId, token);
 
@@ -134,18 +134,30 @@ async function main() {
       });
 
       // =========================
-      // 📊 ACUMULADO SHARE DIARIO
+      // 📊 CHECK EXISTENCIA SHARE
       // =========================
-      await supabase.from("acumulado_share_diarios").upsert({
-        pagina: service.Nombre_pagina,
-        fecha: day,
-        share: share_acumulado,
-        created_at: new Date().toISOString(),
-      }, {
-        onConflict: "pagina,fecha",
-      });
+      const { data: existingShare } = await supabase
+        .from("acumulado_share_diarios")
+        .select("id_record")
+        .eq("pagina", service.Nombre_pagina)
+        .eq("fecha", day)
+        .maybeSingle();
 
-      console.log(`OK ${service.Nombre_pagina} ${day}`);
+      // =========================
+      // 🚫 INSERT SOLO SI NO EXISTE
+      // =========================
+      if (!existingShare) {
+        await supabase.from("acumulado_share_diarios").insert({
+          pagina: service.Nombre_pagina,
+          fecha: day,
+          share: share_acumulado,
+          created_at: new Date().toISOString(),
+        });
+
+        console.log(`📊 INSERT SHARE ${service.Nombre_pagina} ${day}`);
+      } else {
+        console.log(`⏭️ YA EXISTE SHARE ${service.Nombre_pagina} ${day}`);
+      }
 
     } catch (err) {
       console.log(`ERROR ${service.Nombre_pagina}:`, err.message);
