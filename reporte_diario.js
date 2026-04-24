@@ -19,7 +19,7 @@ const addDays = (date, days) => {
 };
 
 // =========================
-// 🔹 METRICS
+// 🔹 METRICS (IGUAL QUE TENÍAS)
 // =========================
 async function getMetric(pageId, token, metric, since, until) {
   try {
@@ -44,9 +44,9 @@ async function getMetric(pageId, token, metric, since, until) {
 }
 
 // =========================
-// 🔹 SHARES (POSTS)
+// 🔥 SHARES TOTALES ACUMULADOS (TODOS LOS POSTS)
 // =========================
-async function getSharesByDay(pageId, token, since, until) {
+async function getTotalShares(pageId, token) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
   let total = 0;
 
@@ -54,42 +54,49 @@ async function getSharesByDay(pageId, token, since, until) {
     while (url) {
       const res = await axios.get(url, {
         params: {
-          fields: "shares,created_time",
-          since,
-          until,
+          fields: "shares",
           limit: 100,
           access_token: token,
         },
       });
 
-      for (const post of res.data.data || []) {
+      const posts = res.data.data || [];
+
+      for (const post of posts) {
         total += post.shares?.count || 0;
       }
 
       url = res.data.paging?.next || null;
     }
-  } catch {
-    return 0;
+  } catch (err) {
+    console.log("❌ SHARE ERROR:", err.response?.data || err.message);
   }
 
   return total;
 }
 
 // =========================
-// 🔥 GUARDAR SHARE DIARIO
+// 💾 SAVE SHARE SNAPSHOT DIARIO
 // =========================
 async function saveDailyShare(pageName, share, date) {
-  await supabase.from("acumulado_share_diarios").upsert(
-    {
-      pagina: pageName,
-      fecha: date,
-      share: share,
-      created_at: new Date().toISOString(),
-    },
-    {
+  const payload = {
+    pagina: pageName,
+    fecha: date,
+    share: share ?? 0,
+    created_at: new Date().toISOString(),
+  };
+
+  const { error } = await supabase
+    .from("acumulado_share_diarios")
+    .upsert(payload, {
       onConflict: "pagina,fecha",
-    }
-  );
+    });
+
+  if (error) {
+    console.log("❌ SUPABASE ERROR:", error.message);
+  } else {
+    console.log("✅ SHARE SNAPSHOT:", pageName, date, share);
+  }
 }
 
 // =========================
@@ -124,13 +131,16 @@ async function main() {
       try {
 
         // =========================
-        // 📊 METRICS
+        // 📊 METRICS DIARIAS
         // =========================
         const impresiones = await getMetric(pageId, token, "page_impressions_unique", day, nextDay);
         const reactions = await getMetric(pageId, token, "page_actions_post_reactions_like_total", day, nextDay);
         const engagement = await getMetric(pageId, token, "page_post_engagements", day, nextDay);
 
-        const share = await getSharesByDay(pageId, token, day, nextDay);
+        // =========================
+        // 🔥 SHARE TOTAL ACUMULADO
+        // =========================
+        const share = await getTotalShares(pageId, token);
 
         // =========================
         // 🧠 POSTS PROGRAMADOS
@@ -160,14 +170,14 @@ async function main() {
         });
 
         // =========================
-        // 📊 SHARE ACUMULADO DIARIO (NUEVO)
+        // 📊 SNAPSHOT SHARE DIARIO
         // =========================
         await saveDailyShare(service.Nombre_pagina, share, day);
 
         console.log(`📊 OK ${service.Nombre_pagina} ${day}`);
 
       } catch (err) {
-        console.error(`❌ Error ${service.Nombre_pagina} ${day}:`, err.message);
+        console.log(`❌ ERROR ${service.Nombre_pagina} ${day}:`, err.message);
       }
     }
   }
