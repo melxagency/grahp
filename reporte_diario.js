@@ -17,16 +17,8 @@ function getCubaDate() {
     .split("T")[0];
 }
 
-const addDays = (date, days) => {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return d;
-};
-
-const formatDate = (d) => d.toISOString().split("T")[0];
-
 // =========================
-// 📊 METRICS META
+// 📊 METRICS META (ACUMULADO)
 // =========================
 async function getMetric(pageId, token, metric, since, until) {
   try {
@@ -79,7 +71,7 @@ async function getTotalShares(pageId, token) {
 }
 
 // =========================
-// 🚀 MAIN
+// 🚀 MAIN (ACUMULADO)
 // =========================
 async function main() {
 
@@ -87,7 +79,7 @@ async function main() {
   const { data: pages } = await supabase.from("pages").select("*");
   const { data: postsProgramados } = await supabase.from("post_programados_fb").select("*");
 
-  const today = new Date(getCubaDate());
+  const today = getCubaDate();
 
   for (const service of services) {
 
@@ -99,92 +91,77 @@ async function main() {
 
     if (!pageId || !token) continue;
 
-    const startDate = new Date(service.fecha_inicio_explotacion);
+    const startDate = service.fecha_inicio_explotacion;
 
-    // =========================
-    // 🔍 EXISTENTES EN BD
-    // =========================
-    const { data: existing } = await supabase
-      .from("reporte_diario")
-      .select("fecha")
-      .eq("pagina", service.Nombre_pagina);
+    try {
 
-    const existingSet = new Set((existing || []).map(e => e.fecha));
+      // =========================
+      // 📊 MÉTRICAS ACUMULADAS
+      // =========================
+      const impresiones = await getMetric(pageId, token, "page_impressions_unique", startDate, today);
+      const reactions = await getMetric(pageId, token, "page_actions_post_reactions_like_total", startDate, today);
+      const engagement = await getMetric(pageId, token, "page_post_engagements", startDate, today);
 
-    // =========================
-    // 🔁 LOOP DÍAS FALTANTES
-    // =========================
-    for (let d = new Date(startDate); d <= today; d = addDays(d, 1)) {
+      // =========================
+      // 🧠 POSTS ACUMULADOS
+      // =========================
+      const totalPosts = postsProgramados
+        .filter(p =>
+          p.pagina === service.Nombre_pagina &&
+          new Date(p.fecha_inicio) <= new Date(today)
+        )
+        .reduce((s, p) => {
+          const inicio = new Date(p.fecha_inicio);
+          const fin = p.fecha_final ? new Date(p.fecha_final) : new Date(today);
 
-      const day = formatDate(d);
-      const nextDay = formatDate(addDays(d, 1));
+          const dias = Math.max(
+            0,
+            Math.floor((Math.min(fin, new Date(today)) - inicio) / (1000 * 60 * 60 * 24)) + 1
+          );
 
-      // 🚫 SALTAR SI YA EXISTE
-      if (existingSet.has(day)) continue;
+          return s + (dias * p.post_diarios);
+        }, 0);
 
-      try {
+      // =========================
+      // 🔥 SHARE ACUMULADO
+      // =========================
+      const share = await getTotalShares(pageId, token);
 
-        // =========================
-        // 📊 MÉTRICAS BASE
-        // =========================
-        const impresiones = await getMetric(pageId, token, "page_impressions_unique", day, nextDay);
-        const reactions = await getMetric(pageId, token, "page_actions_post_reactions_like_total", day, nextDay);
-        const engagement = await getMetric(pageId, token, "page_post_engagements", day, nextDay);
+      // =========================
+      // 🧾 INSERT / UPDATE ACUMULADO
+      // =========================
+      const { data: existing } = await supabase
+        .from("reporte_diario_acumulado")
+        .select("id_record")
+        .eq("pagina", service.Nombre_pagina)
+        .maybeSingle();
 
-        // =========================
-        // 🧠 POSTS PROGRAMADOS
-        // =========================
-        const post = postsProgramados
-          .filter(p =>
-            p.pagina === service.Nombre_pagina &&
-            new Date(p.fecha_inicio) <= d &&
-            (!p.fecha_final || new Date(p.fecha_final) >= d)
-          )
-          .reduce((s, p) => s + p.post_diarios, 0);
+      const payload = {
+        pagina: service.Nombre_pagina,
+        fecha: today,
+        impresiones,
+        reaction: reactions,
+        engagement,
+        engagement_real: engagement,
+        share,
+        post: totalPosts,
+        created_at: new Date().toISOString()
+      };
 
-        // =========================
-        // 🔥 INSERT REPORTE DIARIO (SIN SHARE)
-        // =========================
-        await supabase.from("reporte_diario").insert({
-          pagina: service.Nombre_pagina,
-          fecha: day,
-          impresiones,
-          reaction: reactions,
-          engagement,
-          post,
-          engagement_real: engagement
-        });
+      if (!existing) {
+        await supabase.from("reporte_diario_acumulado").insert(payload);
+        console.log(`📊 INSERT ACUMULADO ${service.Nombre_pagina}`);
+      } else {
+        await supabase
+          .from("reporte_diario_acumulado")
+          .update(payload)
+          .eq("pagina", service.Nombre_pagina);
 
-        // =========================
-        // 🔥 SHARE ACUMULADO
-        // =========================
-        const share_acumulado = await getTotalShares(pageId, token);
-
-        const { data: existingShare } = await supabase
-          .from("acumulado_share_diarios")
-          .select("id_record")
-          .eq("pagina", service.Nombre_pagina)
-          .eq("fecha", day)
-          .maybeSingle();
-
-        if (!existingShare) {
-          await supabase.from("acumulado_share_diarios").insert({
-            pagina: service.Nombre_pagina,
-            fecha: day,
-            share: share_acumulado,
-            created_at: new Date().toISOString(),
-          });
-
-          console.log(`📊 SHARE INSERTADO ${service.Nombre_pagina} ${day}`);
-        } else {
-          console.log(`⏭️ SHARE YA EXISTE ${service.Nombre_pagina} ${day}`);
-        }
-
-        console.log(`📊 OK ${service.Nombre_pagina} ${day}`);
-
-      } catch (err) {
-        console.log(`ERROR ${service.Nombre_pagina}:`, err.message);
+        console.log(`🔄 UPDATE ACUMULADO ${service.Nombre_pagina}`);
       }
+
+    } catch (err) {
+      console.log(`❌ ERROR ${service.Nombre_pagina}:`, err.message);
     }
   }
 }
