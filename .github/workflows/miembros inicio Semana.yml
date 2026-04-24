@@ -3,7 +3,7 @@ name: Miembros Inicio de la semana
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 6 * * 1' # Lunes 1:00 AM hora de Cuba
+    - cron: '0 6 * * 1' # Lunes 1:00 AM hora de Cuba (UTC-5)
 
 jobs:
   count-members:
@@ -28,7 +28,7 @@ jobs:
       - name: Fetch Group IDs from Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           echo "📡 Fetching group IDs..."
 
@@ -50,7 +50,9 @@ jobs:
           RESULT="[]"
 
           for row in $(jq -c '.[]' groups.json); do
-            GROUP_ID=$(echo "$row" | jq -r '.id_group')
+
+            # 🔥 FORZAR NUMÉRICO (FIX CLAVE)
+            GROUP_ID=$(echo "$row" | jq -r '.id_group | tonumber')
 
             RESPONSE=$(curl -s \
               "https://graph.facebook.com/v25.0/${GROUP_ID}?fields=member_count&access_token=${FACEBOOK_TOKEN}")
@@ -67,12 +69,15 @@ jobs:
             fi
 
             RESULT=$(echo "$RESULT" | jq \
-              --arg id "$GROUP_ID" \
+              --argjson id "$GROUP_ID" \
               --argjson count "$COUNT" \
               '. + [{"id_group": $id, "miembros_inicio_semana": $count}]')
           done
 
           echo "$RESULT" > update_payload.json
+
+          echo "📦 PAYLOAD GENERADO:"
+          cat update_payload.json
 
       # =========================
       # 5. UPDATE SUPABASE
@@ -80,7 +85,7 @@ jobs:
       - name: Update Supabase (inicio de semana)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           echo "🚀 Updating inicio de semana..."
 
@@ -91,14 +96,15 @@ jobs:
 
             echo "📦 Updating $GROUP_ID → $COUNT"
 
-            curl -s -X PATCH \
+            RESPONSE=$(curl -s -w "\nHTTP: %{http_code}\n" -X PATCH \
               "${SUPABASE_URL}/rest/v1/facebook_groups?id_group=eq.${GROUP_ID}" \
               -H "apikey: ${SUPABASE_KEY}" \
               -H "Authorization: Bearer ${SUPABASE_KEY}" \
               -H "Content-Type: application/json" \
-              -H "Prefer: return=minimal" \
-              -d "{\"miembros_inicio_semana\": ${COUNT}}"
+              -H "Prefer: return=representation" \
+              -d "{\"miembros_inicio_semana\": ${COUNT}}")
 
+            echo "$RESPONSE"
           done
 
           echo "🎉 DONE"
