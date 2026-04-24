@@ -1,7 +1,6 @@
-name: Miembros inicio del dia
+name: Miembros Inicio del dia
+
 on:
-  schedule:
-    - cron: "5 5 * * *" 
   workflow_dispatch:
 
 jobs:
@@ -9,20 +8,28 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # =========================
+      # 1. CHECKOUT
+      # =========================
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # =========================
+      # 2. INSTALL TOOLS
+      # =========================
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
       # =========================
-      # 1. FETCH GROUPS
+      # 3. FETCH GROUPS FROM SUPABASE
       # =========================
       - name: Fetch Group IDs from Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
+          echo "📡 Fetching group IDs..."
+
           curl -s \
             "${SUPABASE_URL}/rest/v1/facebook_groups?select=id_group&limit=1000" \
             -H "apikey: ${SUPABASE_KEY}" \
@@ -30,7 +37,7 @@ jobs:
             > groups.json
 
       # =========================
-      # 2. FACEBOOK DATA
+      # 4. FETCH FACEBOOK DATA (SAFE)
       # =========================
       - name: Fetch Facebook data
         env:
@@ -43,61 +50,66 @@ jobs:
           for row in $(jq -c '.[]' groups.json); do
             GROUP_ID=$(echo "$row" | jq -r '.id_group')
 
+            echo "📦 Group: $GROUP_ID"
+
             RESPONSE=$(curl -s \
               "https://graph.facebook.com/v25.0/${GROUP_ID}?fields=member_count&access_token=${FACEBOOK_TOKEN}")
 
-            COUNT=$(echo "$RESPONSE" | jq -r '.member_count // 0')
+            COUNT=$(echo "$RESPONSE" | jq -r '.member_count // empty')
 
-            if [ "$COUNT" -gt 0 ]; then
-              RESULT=$(echo "$RESULT" | jq \
-                --arg id "$GROUP_ID" \
-                --argjson count "$COUNT" \
-                '. + [{"id_group": ($id | tonumber), "miembros_actuales": $count}]')
+            echo "👥 RAW COUNT: $COUNT"
+
+            # =========================
+            # 🔥 VALIDACIONES IMPORTANTES
+            # =========================
+
+            # Si viene vacío o null → saltar
+            if [ -z "$COUNT" ] || [ "$COUNT" = "null" ]; then
+              echo "⚠️ Skipping $GROUP_ID (invalid response)"
+              continue
             fi
+
+            # Si es 0 → NO actualizar (evita borrados falsos)
+            if [ "$COUNT" -eq 0 ]; then
+              echo "⚠️ Skipping $GROUP_ID (0 detected - likely API limit)"
+              continue
+            fi
+
+            RESULT=$(echo "$RESULT" | jq \
+              --arg id "$GROUP_ID" \
+              --argjson count "$COUNT" \
+              '. + [{"id_group": $id, "miembros_inicio_dia": $count}]')
           done
 
           echo "$RESULT" > update_payload.json
 
       # =========================
-      # 3. CLEAN JSON
+      # 5. UPDATE ONE BY ONE (SAFE)
       # =========================
-      - name: Clean JSON payload
-        run: |
-          jq -c '.' update_payload.json > payload_clean.json
-
-      # =========================
-      # 4. UPDATE SUPABASE
-      # =========================
-      - name: Update Supabase
+      - name: Update Supabase one by one
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          curl -s -X POST \
-            "${SUPABASE_URL}/functions/v1/bulk-update-members" \
-            -H "Authorization: Bearer ${SUPABASE_KEY}" \
-            -H "Content-Type: application/json" \
-            -d @payload_clean.json
+          echo "🚀 Updating groups one by one..."
 
-      # =========================
-      # 5. SEND TELEGRAM REPORT + PDF NAME
-      # =========================
-      - name: Send Telegram Report
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: |
+          for row in $(jq -c '.[]' update_payload.json); do
+            GROUP_ID=$(echo "$row" | jq -r '.id_group')
+            COUNT=$(echo "$row" | jq -r '.miembros_inicio_dia')
 
-          # 📌 generar nombre del PDF
-          DATE=$(date +"%d-%m-%Y")
-          PDF_NAME="(+)reporte-crecimientoFG.pdf"
+            echo "📦 Updating $GROUP_ID → $COUNT"
 
-          echo "📄 PDF NAME: $PDF_NAME"
+            RESPONSE=$(curl -s -o response.txt -w "%{http_code}" -X PATCH \
+              "${SUPABASE_URL}/rest/v1/facebook_groups?id_group=eq.${GROUP_ID}" \
+              -H "apikey: ${SUPABASE_KEY}" \
+              -H "Authorization: Bearer ${SUPABASE_KEY}" \
+              -H "Content-Type: application/json" \
+              -H "Prefer: return=minimal" \
+              -d "{\"miembros_actuales\": $COUNT}")
 
-          curl -s -X POST \
-            "${SUPABASE_URL}/functions/v1/telegram-notify" \
-            -H "Authorization: Bearer ${SUPABASE_KEY}" \
-            -H "Content-Type: application/json" \
-            -d "{\"pdf_name\":\"${PDF_NAME}\"}"
+            echo "HTTP: $RESPONSE"
+          done
 
-          echo "📩 Report sent"
+          echo "🎉 All valid groups updated"
+
+  
