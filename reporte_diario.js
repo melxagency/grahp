@@ -51,7 +51,7 @@ async function getMetric(pageId, token, metric, since, until) {
 }
 
 // =========================
-// 🔥 SHARE TOTAL
+// 🔥 SHARE TOTAL ACUMULADO
 // =========================
 async function getTotalShares(pageId, token) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
@@ -79,25 +79,6 @@ async function getTotalShares(pageId, token) {
 }
 
 // =========================
-// 🔥 SHARE AYER
-// =========================
-async function getYesterdayShare(pagina, fecha) {
-  const prev = new Date(fecha);
-  prev.setDate(prev.getDate() - 1);
-
-  const prevDate = formatDate(prev);
-
-  const { data } = await supabase
-    .from("acumulado_share_diarios")
-    .select("share")
-    .eq("pagina", pagina)
-    .eq("fecha", prevDate)
-    .maybeSingle();
-
-  return data?.share || 0;
-}
-
-// =========================
 // 🚀 MAIN
 // =========================
 async function main() {
@@ -119,9 +100,10 @@ async function main() {
     if (!pageId || !token) continue;
 
     const startDate = new Date(service.fecha_inicio_explotacion);
-    const endDate = today;
 
-    // 🔥 BUSCAR ÚLTIMO DÍA REGISTRADO
+    // =========================
+    // 🔍 EXISTENTES EN BD
+    // =========================
     const { data: existing } = await supabase
       .from("reporte_diario")
       .select("fecha")
@@ -132,20 +114,26 @@ async function main() {
     // =========================
     // 🔁 LOOP DÍAS FALTANTES
     // =========================
-    for (let d = new Date(startDate); d <= endDate; d = addDays(d, 1)) {
+    for (let d = new Date(startDate); d <= today; d = addDays(d, 1)) {
 
       const day = formatDate(d);
       const nextDay = formatDate(addDays(d, 1));
 
-      // 👉 solo días faltantes
+      // 🚫 SALTAR SI YA EXISTE
       if (existingSet.has(day)) continue;
 
       try {
 
+        // =========================
+        // 📊 MÉTRICAS BASE
+        // =========================
         const impresiones = await getMetric(pageId, token, "page_impressions_unique", day, nextDay);
         const reactions = await getMetric(pageId, token, "page_actions_post_reactions_like_total", day, nextDay);
         const engagement = await getMetric(pageId, token, "page_post_engagements", day, nextDay);
 
+        // =========================
+        // 🧠 POSTS PROGRAMADOS
+        // =========================
         const post = postsProgramados
           .filter(p =>
             p.pagina === service.Nombre_pagina &&
@@ -154,22 +142,43 @@ async function main() {
           )
           .reduce((s, p) => s + p.post_diarios, 0);
 
-        const share_acumulado = await getTotalShares(pageId, token);
-        const share_ayer = await getYesterdayShare(service.Nombre_pagina, day);
-        const share_diario = Math.max(share_acumulado - share_ayer, 0);
-
-        await supabase.from("reporte_diario").upsert({
+        // =========================
+        // 🔥 INSERT REPORTE DIARIO (SIN SHARE)
+        // =========================
+        await supabase.from("reporte_diario").insert({
           pagina: service.Nombre_pagina,
           fecha: day,
           impresiones,
           reaction: reactions,
           engagement,
           post,
-          engagement_real: engagement,
-          share: share_diario
-        }, {
-          onConflict: "pagina,fecha",
+          engagement_real: engagement
         });
+
+        // =========================
+        // 🔥 SHARE ACUMULADO
+        // =========================
+        const share_acumulado = await getTotalShares(pageId, token);
+
+        const { data: existingShare } = await supabase
+          .from("acumulado_share_diarios")
+          .select("id_record")
+          .eq("pagina", service.Nombre_pagina)
+          .eq("fecha", day)
+          .maybeSingle();
+
+        if (!existingShare) {
+          await supabase.from("acumulado_share_diarios").insert({
+            pagina: service.Nombre_pagina,
+            fecha: day,
+            share: share_acumulado,
+            created_at: new Date().toISOString(),
+          });
+
+          console.log(`📊 SHARE INSERTADO ${service.Nombre_pagina} ${day}`);
+        } else {
+          console.log(`⏭️ SHARE YA EXISTE ${service.Nombre_pagina} ${day}`);
+        }
 
         console.log(`📊 OK ${service.Nombre_pagina} ${day}`);
 
