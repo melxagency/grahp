@@ -18,16 +18,18 @@ function getCubaDate() {
 }
 
 // =========================
-// 📊 METRICS META (LIFETIME)
+// 📊 METRICS CORRECTAS
 // =========================
-async function getMetric(pageId, token, metric) {
+async function getMetric(pageId, token, metric, since, until) {
   try {
     const res = await axios.get(
       `https://graph.facebook.com/v19.0/${pageId}/insights`,
       {
         params: {
           metric,
-          period: "lifetime",
+          period: "day",
+          since,
+          until,
           access_token: token,
         },
       }
@@ -35,22 +37,19 @@ async function getMetric(pageId, token, metric) {
 
     const values = res.data.data?.[0]?.values || [];
 
-    // algunos vienen como objeto {value: {total: X}}
-    const value = values[0]?.value;
+    return values.reduce((sum, v) => {
+      if (typeof v.value === "number") return sum + v.value;
+      if (typeof v.value === "object") return sum + (v.value.total || 0);
+      return sum + (v.value || 0);
+    }, 0);
 
-    if (typeof value === "object") {
-      return value?.total || 0;
-    }
-
-    return value || 0;
-
-  } catch {
+  } catch (err) {
     return 0;
   }
 }
 
 // =========================
-// 🔥 SHARE TOTAL REAL
+// 🔥 SHARE TOTAL (OK)
 // =========================
 async function getTotalShares(pageId, token) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
@@ -85,6 +84,10 @@ async function main() {
   const { data: pages } = await supabase.from("pages").select("*");
   const today = getCubaDate();
 
+  // rango amplio REAL
+  const since = "2000-01-01";
+  const until = today;
+
   for (const page of pages) {
 
     const pageId = page.id_page;
@@ -95,14 +98,34 @@ async function main() {
     try {
 
       // =========================
-      // 📊 MÉTRICAS TOTALES
+      // 📊 MÉTRICAS CORRECTAS
       // =========================
-      const impresiones = await getMetric(pageId, token, "page_impressions");
-      const reactions = await getMetric(pageId, token, "page_actions_post_reactions_like_total");
-      const engagement = await getMetric(pageId, token, "page_post_engagements");
+      const impresiones = await getMetric(
+        pageId,
+        token,
+        "page_impressions_unique",
+        since,
+        until
+      );
+
+      const reactions = await getMetric(
+        pageId,
+        token,
+        "page_actions_post_reactions_like_total",
+        since,
+        until
+      );
+
+      const engagement = await getMetric(
+        pageId,
+        token,
+        "page_post_engagements",
+        since,
+        until
+      );
 
       // =========================
-      // 🔥 SHARE TOTAL
+      // 🔥 SHARE
       // =========================
       const share = await getTotalShares(pageId, token);
 
@@ -117,7 +140,7 @@ async function main() {
         engagement,
         engagement_real: engagement,
         share,
-        post: 0, // ya no calculamos posts
+        post: 0,
         created_at: new Date().toISOString()
       };
 
