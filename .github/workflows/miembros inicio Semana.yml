@@ -28,13 +28,13 @@ jobs:
       - name: Fetch Group IDs from Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
           echo "📡 Fetching group IDs..."
 
-          # VALIDAR SECRET
+          # Validar secret
           if [ -z "$SUPABASE_KEY" ]; then
-            echo "❌ ERROR: SUPABASE_SERVICE_ROLE_KEY vacío"
+            echo "❌ ERROR: SUPABASE_KEY vacío"
             exit 1
           fi
 
@@ -49,7 +49,7 @@ jobs:
           echo "📄 RAW RESPONSE:"
           cat groups.json
 
-          # VALIDAR QUE SEA JSON ARRAY
+          # Validar JSON correcto
           if ! echo "$RESPONSE" | jq -e 'type == "array"' > /dev/null; then
             echo "❌ ERROR: Supabase no devolvió un array válido"
             exit 1
@@ -84,7 +84,7 @@ jobs:
 
             COUNT=$(echo "$RESPONSE" | jq -r '.member_count // empty')
 
-            # VALIDACIONES
+            # Validaciones
             if [ -z "$COUNT" ] || [ "$COUNT" = "null" ]; then
               echo "⚠️ Sin datos para $GROUP_ID"
               continue
@@ -112,12 +112,12 @@ jobs:
       - name: Update Supabase (inicio de semana)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
           echo "🚀 Updating inicio de semana..."
 
           if [ -z "$SUPABASE_KEY" ]; then
-            echo "❌ ERROR: SUPABASE_SERVICE_ROLE_KEY vacío"
+            echo "❌ ERROR: SUPABASE_KEY vacío"
             exit 1
           fi
 
