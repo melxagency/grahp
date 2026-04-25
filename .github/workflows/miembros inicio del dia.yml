@@ -1,9 +1,9 @@
-name: Miembros Inicio del dia
+name: Miembros Inicio del día
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '5 5 * * *' # 00:05 AM hora de Cuba
+    - cron: '5 5 * * *' # 12:05 AM hora de Cuba (UTC-5)
 
 jobs:
   count-members:
@@ -32,11 +32,31 @@ jobs:
         run: |
           echo "📡 Fetching group IDs..."
 
-          curl -s \
+          if [ -z "$SUPABASE_KEY" ]; then
+            echo "❌ ERROR: SUPABASE_KEY vacío"
+            exit 1
+          fi
+
+          RESPONSE=$(curl -s \
             "${SUPABASE_URL}/rest/v1/facebook_groups?select=id_group&limit=1000" \
             -H "apikey: ${SUPABASE_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_KEY}" \
-            > groups.json
+            -H "Content-Type: application/json")
+
+          echo "$RESPONSE" > groups.json
+
+          echo "📄 RAW RESPONSE:"
+          cat groups.json
+
+          if ! echo "$RESPONSE" | jq -e 'type == "array"' > /dev/null; then
+            echo "❌ ERROR: Supabase no devolvió un array válido"
+            exit 1
+          fi
+
+          if [ ! -s groups.json ]; then
+            echo "❌ ERROR: groups.json vacío"
+            exit 1
+          fi
 
       # =========================
       # 4. FETCH FACEBOOK DATA
@@ -50,19 +70,25 @@ jobs:
           RESULT="[]"
 
           for row in $(jq -c '.[]' groups.json); do
+
             GROUP_ID=$(echo "$row" | jq -r '.id_group')
+
+            echo "➡️ Grupo: $GROUP_ID"
 
             RESPONSE=$(curl -s \
               "https://graph.facebook.com/v25.0/${GROUP_ID}?fields=member_count&access_token=${FACEBOOK_TOKEN}")
 
+            echo "📥 FB RESPONSE: $RESPONSE"
+
             COUNT=$(echo "$RESPONSE" | jq -r '.member_count // empty')
 
-            # VALIDACIONES
             if [ -z "$COUNT" ] || [ "$COUNT" = "null" ]; then
+              echo "⚠️ Sin datos para $GROUP_ID"
               continue
             fi
 
-            if [ "$COUNT" -eq 0 ]; then
+            if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
+              echo "⚠️ COUNT inválido: $COUNT"
               continue
             fi
 
@@ -74,6 +100,9 @@ jobs:
 
           echo "$RESULT" > update_payload.json
 
+          echo "📦 PAYLOAD GENERADO:"
+          cat update_payload.json
+
       # =========================
       # 5. UPDATE SUPABASE
       # =========================
@@ -84,6 +113,16 @@ jobs:
         run: |
           echo "🚀 Updating inicio del día..."
 
+          if [ -z "$SUPABASE_KEY" ]; then
+            echo "❌ ERROR: SUPABASE_KEY vacío"
+            exit 1
+          fi
+
+          if [ ! -s update_payload.json ]; then
+            echo "❌ ERROR: payload vacío"
+            exit 1
+          fi
+
           for row in $(jq -c '.[]' update_payload.json); do
 
             GROUP_ID=$(echo "$row" | jq -r '.id_group')
@@ -91,14 +130,15 @@ jobs:
 
             echo "📦 Updating $GROUP_ID → $COUNT"
 
-            curl -s -X PATCH \
+            RESPONSE=$(curl -s -w "\nHTTP: %{http_code}\n" -X PATCH \
               "${SUPABASE_URL}/rest/v1/facebook_groups?id_group=eq.${GROUP_ID}" \
               -H "apikey: ${SUPABASE_KEY}" \
               -H "Authorization: Bearer ${SUPABASE_KEY}" \
               -H "Content-Type: application/json" \
-              -H "Prefer: return=minimal" \
-              -d "{\"miembros_inicio_dia\": ${COUNT}}"
+              -H "Prefer: return=representation" \
+              -d "{\"miembros_inicio_dia\": ${COUNT}}")
 
+            echo "$RESPONSE"
           done
 
           echo "🎉 DONE"
