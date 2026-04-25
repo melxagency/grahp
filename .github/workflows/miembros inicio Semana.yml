@@ -36,7 +36,22 @@ jobs:
             "${SUPABASE_URL}/rest/v1/facebook_groups?select=id_group&limit=1000" \
             -H "apikey: ${SUPABASE_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_KEY}" \
+            -H "Content-Type: application/json" \
             > groups.json
+
+          echo "📄 RAW RESPONSE:"
+          cat groups.json
+
+          # Validar JSON
+          if ! jq empty groups.json 2>/dev/null; then
+            echo "❌ ERROR: JSON inválido desde Supabase"
+            exit 1
+          fi
+
+          if [ ! -s groups.json ]; then
+            echo "❌ ERROR: groups.json vacío"
+            exit 1
+          fi
 
       # =========================
       # 4. FETCH FACEBOOK DATA
@@ -51,25 +66,30 @@ jobs:
 
           for row in $(jq -c '.[]' groups.json); do
 
-            # 🔥 FORZAR NUMÉRICO (FIX CLAVE)
-            GROUP_ID=$(echo "$row" | jq -r '.id_group | tonumber')
+            GROUP_ID=$(echo "$row" | jq -r '.id_group')
+
+            echo "➡️ Grupo: $GROUP_ID"
 
             RESPONSE=$(curl -s \
               "https://graph.facebook.com/v25.0/${GROUP_ID}?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+
+            echo "📥 FB RESPONSE: $RESPONSE"
 
             COUNT=$(echo "$RESPONSE" | jq -r '.member_count // empty')
 
             # VALIDACIONES
             if [ -z "$COUNT" ] || [ "$COUNT" = "null" ]; then
+              echo "⚠️ Sin datos para $GROUP_ID"
               continue
             fi
 
-            if [ "$COUNT" -eq 0 ]; then
+            if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
+              echo "⚠️ COUNT inválido: $COUNT"
               continue
             fi
 
             RESULT=$(echo "$RESULT" | jq \
-              --argjson id "$GROUP_ID" \
+              --arg id "$GROUP_ID" \
               --argjson count "$COUNT" \
               '. + [{"id_group": $id, "miembros_inicio_semana": $count}]')
           done
@@ -88,6 +108,11 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           echo "🚀 Updating inicio de semana..."
+
+          if [ ! -s update_payload.json ]; then
+            echo "❌ ERROR: payload vacío"
+            exit 1
+          fi
 
           for row in $(jq -c '.[]' update_payload.json); do
 
