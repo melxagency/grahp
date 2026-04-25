@@ -1,4 +1,4 @@
-name: Miembros Diario + Reporte
+name: Actualizar Miembros
 
 on:
   workflow_dispatch:
