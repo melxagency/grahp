@@ -35,7 +35,7 @@ function generateDays(start, end) {
 async function getMetric(pageId, token, metric, since, until) {
   try {
     const res = await axios.get(
-      `https://graph.facebook.com/v19.0/${pageId}/insights`,
+      `https://graph.facebook.com/v21.0/${pageId}/insights`,
       {
         params: {
           metric,
@@ -69,7 +69,7 @@ async function getMetric(pageId, token, metric, since, until) {
 }
 
 async function getTotalShares(pageId, token) {
-  let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
+  let url = `https://graph.facebook.com/v21.0/${pageId}/posts`;
   let total = 0;
   try {
     while (url) {
@@ -133,21 +133,19 @@ async function main() {
         continue;
       }
 
-      const [impresiones, reactions, engagement, reach, share] = await Promise.all([
-        getMetric(fbPageId, token, "page_impressions", day, until),
+      const [impresiones, reactions, engagement, share] = await Promise.all([
+        getMetric(fbPageId, token, "page_impressions_unique", day, until), // ✅ reemplaza page_impressions
         getMetric(fbPageId, token, "page_actions_post_reactions_like_total", day, until),
         getMetric(fbPageId, token, "page_post_engagements", day, until),
-        getMetric(fbPageId, token, "page_impressions_unique", day, until),
         getTotalShares(fbPageId, token),
       ]);
 
       const { error: insertError } = await supabase.from("reporte_diario").insert({
         pagina: dbPageId,
-        impresiones,
+        impresiones,        // ✅ page_impressions_unique → impresiones
         reaction: reactions,
         engagement,
         share,
-        reach,
         engagement_real: engagement,
         fecha: day,
         created_at: new Date().toISOString(),
@@ -156,7 +154,7 @@ async function main() {
       if (insertError) {
         console.error(`❌ Error insertando ${dbPageId} → ${day}:`, insertError.message);
       } else {
-        console.log(`✅ ${dbPageId} → ${day} | imp:${impresiones} react:${reactions} eng:${engagement} reach:${reach} shares:${share}`);
+        console.log(`✅ ${dbPageId} → ${day} | imp:${impresiones} react:${reactions} eng:${engagement} shares:${share}`);
       }
     }
   }
