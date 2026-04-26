@@ -87,7 +87,6 @@ async function getShares(pageId, token, since, until) {
 async function main() {
   const { data: pages } = await supabase.from("pages").select("*");
 
-  // ✅ Siempre el día anterior en hora Cuba
   const day = getYesterdayCuba();
   const until = nextDay(day);
 
@@ -102,21 +101,22 @@ async function main() {
 
     console.log(`📊 Página ${dbId}`);
 
-    const [impresiones, reactions, share] = await Promise.all([
+    const [impresiones, reactions, share, engagement] = await Promise.all([
       getMetric(fbId, token, "page_impressions_unique", day, until),
       getReactions(fbId, token, day, until),
       getShares(fbId, token, day, until),
+      getMetric(fbId, token, "page_post_engagements", day, until),
     ]);
 
-    console.log("📈", { impresiones, reactions, share });
+    console.log("📈", { impresiones, reactions, share, engagement });
 
-    // ✅ Upsert: inserta o actualiza si ya existe (pagina + fecha)
     const { error } = await supabase.from("reporte_diario").upsert(
       {
         pagina: dbId,
         impresiones,
         reaction: reactions,
         share,
+        engagement,
         fecha: day,
         created_at: new Date().toISOString(),
       },
