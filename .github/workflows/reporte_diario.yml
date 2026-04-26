@@ -9,12 +9,6 @@ jobs:
   report:
     runs-on: ubuntu-latest
 
-    env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-      PAGE_TOKEN: ${{ secrets.PAGE_TOKEN }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -31,16 +25,22 @@ jobs:
       # 1. Ejecutar script principal
       # =========================
       - name: Run report script
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          PAGE_TOKEN: ${{ secrets.PAGE_TOKEN }}
         run: node reporte_diario.js
 
       # =========================
       # 2. Generar PDF (Edge Function)
       # =========================
       - name: Generate PDF Report
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           curl -X POST "https://cqwdrsxcylkvlscvggwt.supabase.co/functions/v1/reporte_publicitario" \
           -H "Content-Type: application/json" \
-          -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
           -d '{
             "fileName": "reporte_diario.pdf"
           }'
