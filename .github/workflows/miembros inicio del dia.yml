@@ -2,7 +2,7 @@ name: Miembros Inicio Dia
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 0 * * *' # 8:00 PM Cuba (UTC-4 / ojo DST)
+    - cron: '5 5 * * *' # 8:00 PM Cuba (UTC-4 / ojo DST)
 
 jobs:
   count-members:
