@@ -18,14 +18,14 @@ function getCubaDate() {
 }
 
 // =========================
-// 📅 FORMATEAR FECHA
+// FORMATO FECHA YYYY-MM-DD
 // =========================
 function formatDate(d) {
   return d.toISOString().split("T")[0];
 }
 
 // =========================
-// 📊 METRICS META (CORREGIDO)
+// 📊 METRICAS META SEGURAS
 // =========================
 async function getMetric(pageId, metric, since, until) {
   try {
@@ -48,7 +48,7 @@ async function getMetric(pageId, metric, since, until) {
 
     return values.reduce((sum, v) => sum + (Number(v.value) || 0), 0);
   } catch (err) {
-    console.log("METRIC ERROR:", metric, err.response?.data || err.message);
+    console.log(`❌ METRIC ERROR (${metric})`, err.response?.data || err.message);
     return 0;
   }
 }
@@ -76,7 +76,9 @@ async function getTotalShares(pageId) {
 
       url = res.data.paging?.next || null;
     }
-  } catch {}
+  } catch (err) {
+    console.log("❌ SHARE ERROR", err.response?.data || err.message);
+  }
 
   return total;
 }
@@ -94,9 +96,7 @@ async function main() {
 
   const dayStr = formatDate(yesterday);
 
-  // rango real (Meta funciona mejor así)
-  const since = dayStr;
-  const until = dayStr;
+  console.log("📅 Ejecutando reporte para:", dayStr);
 
   for (const page of pages) {
     const fbPageId = page.id_page;
@@ -105,7 +105,7 @@ async function main() {
     if (!fbPageId) continue;
 
     // =========================
-    // 🔍 evitar duplicados
+    // 🔍 EVITAR DUPLICADOS
     // =========================
     const { data: exists } = await supabase
       .from("reporte_diario")
@@ -119,36 +119,45 @@ async function main() {
       continue;
     }
 
+    console.log(`📊 Procesando página ${dbPageId}`);
+
     // =========================
-    // 📊 MÉTRICAS (CORREGIDAS)
+    // 📊 METRICAS (día anterior)
     // =========================
     const impresiones = await getMetric(
       fbPageId,
       "page_impressions",
-      since,
-      until
+      dayStr,
+      dayStr
     );
 
     const engagement = await getMetric(
       fbPageId,
       "page_post_engagements",
-      since,
-      until
+      dayStr,
+      dayStr
     );
 
     const reactions = await getMetric(
       fbPageId,
       "page_actions_post_reactions_total",
-      since,
-      until
+      dayStr,
+      dayStr
     );
 
     const share = await getTotalShares(fbPageId);
 
+    console.log("📈 Resultado:", {
+      impresiones,
+      engagement,
+      reactions,
+      share,
+    });
+
     // =========================
-    // 💾 INSERT
+    // 💾 INSERT SUPABASE
     // =========================
-    await supabase.from("reporte_diario").insert({
+    const { error } = await supabase.from("reporte_diario").insert({
       pagina: dbPageId,
       impresiones,
       reaction: reactions,
@@ -159,7 +168,11 @@ async function main() {
       created_at: new Date().toISOString(),
     });
 
-    console.log(`✅ INSERT ${dbPageId} ${dayStr}`);
+    if (error) {
+      console.log("❌ SUPABASE ERROR:", error.message);
+    } else {
+      console.log(`✅ INSERT OK ${dbPageId} ${dayStr}`);
+    }
   }
 }
 
