@@ -1,5 +1,4 @@
-name: Actualizar Miembros
-
+name: Miemrbros Inicio Dia
 on:
   workflow_dispatch:
   schedule:
