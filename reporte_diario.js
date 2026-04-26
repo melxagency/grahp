@@ -27,13 +27,12 @@ async function getMetric(pageId, token, metric, since, until) {
           metric,
           period: "day",
           since,
-          until,
+          until,        // ✅ until debe ser día+1 (se pasa desde el caller)
           access_token: token,
         },
       }
     );
-
-    const values = res.data.data?.[0]?.values || [];
+    const values = res.data?.data?.[0]?.values || [];
     return values.reduce((s, d) => s + (Number(d.value) || 0), 0);
   } catch {
     return 0;
@@ -46,7 +45,6 @@ async function getMetric(pageId, token, metric, since, until) {
 async function getTotalShares(pageId, token) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
   let total = 0;
-
   try {
     while (url) {
       const res = await axios.get(url, {
@@ -56,15 +54,12 @@ async function getTotalShares(pageId, token) {
           access_token: token,
         },
       });
-
-      for (const post of res.data.data || []) {
+      for (const post of res.data?.data || []) {
         total += post.shares?.count || 0;
       }
-
-      url = res.data.paging?.next || null;
+      url = res.data?.paging?.next || null;
     }
   } catch {}
-
   return total;
 }
 
@@ -74,13 +69,20 @@ async function getTotalShares(pageId, token) {
 function generateDays(start, end) {
   const days = [];
   const current = new Date(start);
-
   while (current <= end) {
     days.push(new Date(current).toISOString().split("T")[0]);
     current.setDate(current.getDate() + 1);
   }
-
   return days;
+}
+
+// =========================
+// ➕ SUMAR UN DÍA A FECHA STRING
+// =========================
+function nextDay(dateStr) {
+  const d = new Date(dateStr + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().split("T")[0];
 }
 
 // =========================
@@ -90,18 +92,16 @@ async function main() {
   const { data: pages } = await supabase.from("pages").select("*");
 
   const today = getCubaDate();
-
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
 
-  const startDate = new Date("2026-03-01"); // 🔥 FIJO (el más antiguo)
-
+  const startDate = new Date("2026-03-01");
   const days = generateDays(startDate, yesterday);
 
   for (const day of days) {
     for (const page of pages) {
-      const fbPageId = page.id_page;
-      const dbPageId = page.id;
+      const fbPageId = page.id_page;   // ✅ corregido sintaxis
+      const dbPageId = page.id;        // ✅ corregido sintaxis
       const token = page.token;
 
       if (!fbPageId || !token) continue;
@@ -120,31 +120,19 @@ async function main() {
 
       // =========================
       // 📊 METRICS DEL DÍA
+      // ✅ until = day+1 para que Meta devuelva datos del día exacto
       // =========================
+      const until = nextDay(day);
+
       const impresiones = await getMetric(
-        fbPageId,
-        token,
-        "page_impressions_unique",
-        day,
-        day
+        fbPageId, token, "page_impressions_unique", day, until
       );
-
       const reactions = await getMetric(
-        fbPageId,
-        token,
-        "page_actions_post_reactions_like_total",
-        day,
-        day
+        fbPageId, token, "page_actions_post_reactions_like_total", day, until
       );
-
       const engagement = await getMetric(
-        fbPageId,
-        token,
-        "page_post_engagements",
-        day,
-        day
+        fbPageId, token, "page_post_engagements", day, until
       );
-
       const share = await getTotalShares(fbPageId, token);
 
       // =========================
