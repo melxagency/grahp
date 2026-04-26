@@ -103,10 +103,11 @@ async function main() {
   const todayStr = today.toISOString().split("T")[0];
 
   for (const page of pages) {
-    const pageId = page.id_page;
+    const fbPageId = page.id_page; // 👉 Facebook
+    const dbPageId = page.id;      // 👉 Base de datos
     const token = page.token;
 
-    if (!pageId || !token) continue;
+    if (!fbPageId || !token) continue;
 
     // =========================
     // 🔍 VERIFICAR SI YA EXISTE
@@ -114,12 +115,12 @@ async function main() {
     const { data: exists } = await supabase
       .from("reporte_diario_acumulado")
       .select("id_record")
-      .eq("pagina", page.nombre)
+      .eq("pagina", dbPageId)
       .eq("fecha", todayStr)
       .maybeSingle();
 
     if (exists) {
-      console.log(`⏭️ YA EXISTE ${page.nombre} ${todayStr}`);
+      console.log(`⏭️ YA EXISTE ${dbPageId} ${todayStr}`);
       continue;
     }
 
@@ -138,7 +139,7 @@ async function main() {
     // =========================
     for (const r of ranges) {
       impresionesTotal += await getMetric(
-        pageId,
+        fbPageId,
         token,
         "page_impressions_unique",
         r.since,
@@ -146,7 +147,7 @@ async function main() {
       );
 
       reactionsTotal += await getMetric(
-        pageId,
+        fbPageId,
         token,
         "page_actions_post_reactions_like_total",
         r.since,
@@ -154,7 +155,7 @@ async function main() {
       );
 
       engagementTotal += await getMetric(
-        pageId,
+        fbPageId,
         token,
         "page_post_engagements",
         r.since,
@@ -162,13 +163,13 @@ async function main() {
       );
     }
 
-    const share = await getTotalShares(pageId, token);
+    const share = await getTotalShares(fbPageId, token);
 
     // =========================
-    // 💾 INSERT (SOLO SI NO EXISTE)
+    // 💾 INSERT
     // =========================
     await supabase.from("reporte_diario_acumulado").insert({
-      pagina: page.nombre,
+      pagina: dbPageId, // ✅ ID REAL BD
       impresiones: impresionesTotal,
       reaction: reactionsTotal,
       engagement: engagementTotal,
@@ -178,7 +179,7 @@ async function main() {
       created_at: new Date().toISOString(),
     });
 
-    console.log(`✅ INSERT ${page.nombre} ${todayStr}`);
+    console.log(`✅ INSERT ${dbPageId} ${todayStr}`);
   }
 }
 
