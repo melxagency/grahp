@@ -1,9 +1,8 @@
-name: Actualizar Miembros Inicio Semana
-
+name: Miembros Inicio Semana
 on:
   workflow_dispatch:
   schedule:
-    - cron: '30 6 * * 1' # Lunes 1:30 AM Miami (UTC-5)
+    - cron: '5 5 * * *' # 8:00 PM Cuba (UTC-4 / ojo DST)
 
 jobs:
   count-members:
@@ -31,6 +30,11 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
           echo "📡 Fetching group IDs..."
+
+          if [ -z "$SUPABASE_KEY" ]; then
+            echo "❌ ERROR: SUPABASE_KEY vacío"
+            exit 1
+          fi
 
           RESPONSE=$(curl -s \
             "${SUPABASE_URL}/rest/v1/facebook_groups?select=id_group&limit=1000" \
@@ -63,21 +67,27 @@ jobs:
 
             GROUP_ID=$(echo "$row" | jq -r '.id_group')
 
+            echo "➡️ Procesando grupo: $GROUP_ID"
+
             RESPONSE=$(curl -s \
               "https://graph.facebook.com/v25.0/${GROUP_ID}?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+
+            echo "📥 FB RESPONSE: $RESPONSE"
 
             COUNT=$(echo "$RESPONSE" | jq -r '.member_count // empty')
 
             if [ -z "$COUNT" ] || [ "$COUNT" = "null" ]; then
+              echo "⚠️ Sin member_count"
               continue
             fi
 
             if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
+              echo "⚠️ Valor inválido: $COUNT"
               continue
             fi
 
             RESULT=$(echo "$RESULT" | jq \
-              --arg id "$GROUP_ID" \
+              --argjson id "$GROUP_ID" \
               --argjson count "$COUNT" \
               '. + [{"id_group": $id, "miembros_inicio_semana": $count}]')
           done
@@ -90,43 +100,41 @@ jobs:
       # =========================
       # 5. UPDATE SUPABASE
       # =========================
-      - name: Update Supabase (inicio de semana)
+      - name: Update Supabase (inicio del día)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          echo "🚀 Updating inicio de semana..."
+          echo "🚀 Updating inicio del día..."
+
+          if [ ! -s update_payload.json ]; then
+            echo "❌ ERROR: payload vacío"
+            exit 1
+          fi
 
           for row in $(jq -c '.[]' update_payload.json); do
 
             GROUP_ID=$(echo "$row" | jq -r '.id_group')
             COUNT=$(echo "$row" | jq -r '.miembros_inicio_semana')
 
-            curl -s -X PATCH \
+            echo "📦 Updating $GROUP_ID → $COUNT"
+
+            RESPONSE=$(curl -s -w "\nHTTP: %{http_code}\n" -X PATCH \
               "${SUPABASE_URL}/rest/v1/facebook_groups?id_group=eq.${GROUP_ID}" \
               -H "apikey: ${SUPABASE_KEY}" \
               -H "Authorization: Bearer ${SUPABASE_KEY}" \
               -H "Content-Type: application/json" \
-              -d "{\"miembros_inicio_semana\": ${COUNT}}"
+              -H "Prefer: return=representation" \
+              -d "{\"miembros_inicio_semana\": ${COUNT}}")
+
+            echo "$RESPONSE"
+
+            # 🔍 Validación real
+            if [[ "$RESPONSE" == *"[]"* ]]; then
+              echo "⚠️ NO ACTUALIZÓ: $GROUP_ID"
+            else
+              echo "✅ OK: $GROUP_ID"
+            fi
           done
 
-          echo "✅ Supabase actualizado"
-
-      # =========================
-      # 6. TELEGRAM REPORT
-      # =========================
-      - name: Send Telegram report
-        env:
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: |
-          echo "📨 Sending report..."
-
-          FILE_NAME="reporte_miembros $(date +'%Y-%m-%d').pdf"
-
-          curl -s -X POST \
-            "https://cqwdrsxcylkvlscvggwt.supabase.co/functions/v1/telegram-notify" \
-            -H "Authorization: Bearer ${SUPABASE_KEY}" \
-            -H "Content-Type: application/json" \
-            -d "{\"fileName\":\"$FILE_NAME\"}"
-
-          echo "✅ Report sent"
+          echo "🎉 Supabase actualizado"
