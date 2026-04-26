@@ -36,7 +36,6 @@ async function getMetric(pageId, token, metric, since, until) {
     const values = res.data.data?.[0]?.values || [];
     return values.reduce((s, d) => s + (Number(d.value) || 0), 0);
   } catch (err) {
-    console.log("METRIC ERROR:", metric, err.response?.data || err.message);
     return 0;
   }
 }
@@ -77,11 +76,25 @@ async function main() {
 
   const today = getCubaDate();
 
-  // 👉 SOLO AYER
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
 
   const yesterdayStr = yesterday.toISOString().split("T")[0];
+
+  // =========================
+  // 📦 TRAER CONTRATOS ACTIVOS
+  // =========================
+  const { data: contratos } = await supabase
+    .from("contratos_servicios")
+    .select("*");
+
+  const contratosActivos = contratos.filter((c) => {
+    const ini = new Date(c.fecha_inicio);
+    const fin = new Date(c.fecha_termino);
+    const y = new Date(yesterdayStr);
+
+    return ini <= y && fin >= y;
+  });
 
   for (const page of pages) {
     const fbPageId = page.id_page;
@@ -91,7 +104,19 @@ async function main() {
     if (!fbPageId || !token) continue;
 
     // =========================
-    // 🔍 VERIFICAR DUPLICADO
+    // 🔍 VALIDAR CONTRATO ACTIVO
+    // =========================
+    const tieneContrato = contratosActivos.some(
+      (c) => c.id_cliente === page.id_cliente
+    );
+
+    if (!tieneContrato) {
+      console.log(`⏭️ SIN CONTRATO ${dbPageId}`);
+      continue;
+    }
+
+    // =========================
+    // 🔍 EVITAR DUPLICADOS
     // =========================
     const { data: exists } = await supabase
       .from("reporte_diario")
@@ -101,12 +126,12 @@ async function main() {
       .maybeSingle();
 
     if (exists) {
-      console.log(`⏭️ YA EXISTE ${dbPageId} ${yesterdayStr}`);
+      console.log(`⏭️ YA EXISTE ${dbPageId}`);
       continue;
     }
 
     // =========================
-    // 📊 SOLO DÍA ANTERIOR
+    // 📊 DATOS SOLO AYER
     // =========================
     const impresiones = await getMetric(
       fbPageId,
@@ -135,7 +160,7 @@ async function main() {
     const share = await getTotalShares(fbPageId, token);
 
     // =========================
-    // 💾 INSERT DIARIO
+    // 💾 INSERT
     // =========================
     await supabase.from("reporte_diario").insert({
       pagina: dbPageId,
@@ -148,7 +173,7 @@ async function main() {
       created_at: new Date().toISOString(),
     });
 
-    console.log(`✅ INSERT ${dbPageId} ${yesterdayStr}`);
+    console.log(`✅ INSERT ${dbPageId}`);
   }
 }
 
