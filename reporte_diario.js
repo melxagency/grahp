@@ -7,7 +7,7 @@ const supabase = createClient(
 );
 
 // =========================
-// 🇨🇺 FECHA AYER CUBA
+// 🇨🇺 FECHA AYER
 // =========================
 function getYesterdayCuba() {
   const now = new Date();
@@ -19,8 +19,15 @@ function getYesterdayCuba() {
   return cubaNow.toISOString().split("T")[0];
 }
 
+// 👉 SUMAR 1 DÍA (FIX CLAVE)
+function getNextDay(day) {
+  const d = new Date(day);
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().split("T")[0];
+}
+
 // =========================
-// 📊 METRICS (INSIGHTS)
+// 📊 METRICS
 // =========================
 async function getMetric(pageId, token, metric, day) {
   try {
@@ -45,11 +52,13 @@ async function getMetric(pageId, token, metric, day) {
 }
 
 // =========================
-// ❤️ REACTIONS (REAL)
+// ❤️ REACTIONS (FIX)
 // =========================
 async function getReactions(pageId, token, day) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
   let total = 0;
+
+  const until = getNextDay(day); // ✅ FIX
 
   try {
     while (url) {
@@ -57,7 +66,7 @@ async function getReactions(pageId, token, day) {
         params: {
           fields: "created_time,reactions.summary(true)",
           since: day,
-          until: day,
+          until: until,
           limit: 100,
           access_token: token,
         },
@@ -77,11 +86,13 @@ async function getReactions(pageId, token, day) {
 }
 
 // =========================
-// 🔥 SHARES
+// 🔥 SHARES (FIX)
 // =========================
 async function getShares(pageId, token, day) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
   let total = 0;
+
+  const until = getNextDay(day); // ✅ FIX
 
   try {
     while (url) {
@@ -89,7 +100,7 @@ async function getShares(pageId, token, day) {
         params: {
           fields: "created_time,shares",
           since: day,
-          until: day,
+          until: until,
           limit: 100,
           access_token: token,
         },
@@ -112,12 +123,7 @@ async function getShares(pageId, token, day) {
 // 🚀 MAIN
 // =========================
 async function main() {
-  const { data: pages, error } = await supabase.from("pages").select("*");
-
-  if (error) {
-    console.log("❌ ERROR CARGANDO PAGES:", error);
-    return;
-  }
+  const { data: pages } = await supabase.from("pages").select("*");
 
   const day = getYesterdayCuba();
   console.log("📅 Día:", day);
@@ -127,16 +133,10 @@ async function main() {
     const dbPageId = page.id;
     const token = page.token;
 
-    if (!fbPageId || !token) {
-      console.log(`⚠️ Página inválida ${dbPageId}`);
-      continue;
-    }
+    if (!fbPageId || !token) continue;
 
     console.log(`📊 Página ${dbPageId}`);
 
-    // =========================
-    // 🔍 EVITAR DUPLICADOS
-    // =========================
     const { data: exists } = await supabase
       .from("reporte_diario")
       .select("id_record")
@@ -149,9 +149,6 @@ async function main() {
       continue;
     }
 
-    // =========================
-    // 📊 METRICS
-    // =========================
     const impresiones = await getMetric(
       fbPageId,
       token,
@@ -167,39 +164,22 @@ async function main() {
     );
 
     const reactions = await getReactions(fbPageId, token, day);
-
     const share = await getShares(fbPageId, token, day);
 
-    const result = {
+    console.log("📈", { impresiones, engagement, reactions, share });
+
+    await supabase.from("reporte_diario").insert({
+      pagina: dbPageId,
       impresiones,
+      reaction: reactions,
       engagement,
-      reactions,
       share,
-    };
+      engagement_real: engagement,
+      fecha: day,
+      created_at: new Date().toISOString(),
+    });
 
-    console.log("📈", result);
-
-    // =========================
-    // 💾 INSERT
-    // =========================
-    const { error: insertError } = await supabase
-      .from("reporte_diario")
-      .insert({
-        pagina: dbPageId,
-        impresiones,
-        reaction: reactions,
-        engagement,
-        share,
-        engagement_real: engagement,
-        fecha: day,
-        created_at: new Date().toISOString(),
-      });
-
-    if (insertError) {
-      console.log("❌ INSERT ERROR:", insertError);
-    } else {
-      console.log(`✅ INSERT ${dbPageId}`);
-    }
+    console.log(`✅ INSERT ${dbPageId}`);
   }
 }
 
