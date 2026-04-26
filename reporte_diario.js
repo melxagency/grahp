@@ -40,7 +40,7 @@ function splitDateRange(start, end, maxDays = 90) {
 }
 
 // =========================
-// 📊 METRICS META (SEGURA)
+// 📊 METRICS META
 // =========================
 async function getMetric(pageId, token, metric, since, until) {
   try {
@@ -100,6 +100,7 @@ async function main() {
   const { data: pages } = await supabase.from("pages").select("*");
 
   const today = getCubaDate();
+  const todayStr = today.toISOString().split("T")[0];
 
   for (const page of pages) {
     const pageId = page.id_page;
@@ -107,7 +108,24 @@ async function main() {
 
     if (!pageId || !token) continue;
 
-    const startDate = new Date(page.fecha_inicio_explotacion || "2023-01-01");
+    // =========================
+    // 🔍 VERIFICAR SI YA EXISTE
+    // =========================
+    const { data: exists } = await supabase
+      .from("reporte_diario_acumulado")
+      .select("id_record")
+      .eq("pagina", page.nombre)
+      .eq("fecha", todayStr)
+      .maybeSingle();
+
+    if (exists) {
+      console.log(`⏭️ YA EXISTE ${page.nombre} ${todayStr}`);
+      continue;
+    }
+
+    const startDate = new Date(
+      page.fecha_inicio_explotacion || "2023-01-01"
+    );
 
     const ranges = splitDateRange(startDate, today);
 
@@ -119,9 +137,6 @@ async function main() {
     // 🔁 ACUMULAR POR BLOQUES
     // =========================
     for (const r of ranges) {
-      const nextDay = new Date(r.until);
-      nextDay.setDate(nextDay.getDate() + 1);
-
       impresionesTotal += await getMetric(
         pageId,
         token,
@@ -150,35 +165,20 @@ async function main() {
     const share = await getTotalShares(pageId, token);
 
     // =========================
-    // 💾 UPSERT ACUMULADO
+    // 💾 INSERT (SOLO SI NO EXISTE)
     // =========================
-    const { data: exists } = await supabase
-      .from("reporte_diario_acumulado")
-      .select("id_record")
-      .eq("pagina", page.nombre)
-      .maybeSingle();
-
-    const payload = {
+    await supabase.from("reporte_diario_acumulado").insert({
       pagina: page.nombre,
       impresiones: impresionesTotal,
       reaction: reactionsTotal,
       engagement: engagementTotal,
       share,
       engagement_real: engagementTotal,
-      fecha: today.toISOString().split("T")[0],
+      fecha: todayStr,
       created_at: new Date().toISOString(),
-    };
+    });
 
-    if (!exists) {
-      await supabase.from("reporte_diario_acumulado").insert(payload);
-    } else {
-      await supabase
-        .from("reporte_diario_acumulado")
-        .update(payload)
-        .eq("pagina", page.nombre);
-    }
-
-    console.log("OK ACUMULADO:", page.nombre);
+    console.log(`✅ INSERT ${page.nombre} ${todayStr}`);
   }
 }
 
