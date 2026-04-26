@@ -1,32 +1,27 @@
 const axios = require("axios");
 const { createClient } = require("@supabase/supabase-js");
 
+// =========================
+// SUPABASE
+// =========================
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_KEY
 );
 
 // =========================
-// 🇨🇺 AYER (CUBA REAL)
+// 🇨🇺 FECHA CUBA (AYER)
 // =========================
 function getYesterdayCuba() {
   const now = new Date();
-
-  // Cuba UTC-5
-  const cubaNow = new Date(now.getTime() - 5 * 60 * 60 * 1000);
+  const cubaOffset = -5 * 60 * 60 * 1000;
+  const cubaNow = new Date(now.getTime() + cubaOffset);
   cubaNow.setDate(cubaNow.getDate() - 1);
-
-  const date = cubaNow.toISOString().split("T")[0];
-
-  return {
-    since: `${date}T00:00:00`,
-    until: `${date}T23:59:59`,
-    date,
-  };
+  return cubaNow.toISOString().split("T")[0];
 }
 
 // =========================
-// 📊 METRICAS INSIGHTS
+// 📊 METRICAS META (INSIGHTS)
 // =========================
 async function getMetric(pageId, token, metric, since, until) {
   try {
@@ -43,9 +38,8 @@ async function getMetric(pageId, token, metric, since, until) {
       }
     );
 
-    const values = res.data?.data?.[0]?.values || [];
-
-    return values.reduce((sum, v) => sum + (Number(v.value) || 0), 0);
+    const values = res.data.data?.[0]?.values || [];
+    return values.reduce((sum, d) => sum + (Number(d.value) || 0), 0);
   } catch (err) {
     console.log(`❌ METRIC ERROR ${metric}:`, err.response?.data || err.message);
     return 0;
@@ -53,42 +47,60 @@ async function getMetric(pageId, token, metric, since, until) {
 }
 
 // =========================
-// 🔥 REACTIONS REALES
+// 🔥 REACCIONES (LIKES + REACTIONS)
 // =========================
 async function getReactions(pageId, token) {
+  let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
+  let total = {
+    like: 0,
+    love: 0,
+    wow: 0,
+    haha: 0,
+    sad: 0,
+    angry: 0,
+  };
+
   try {
-    const res = await axios.get(
-      `https://graph.facebook.com/v19.0/${pageId}/posts`,
-      {
+    while (url) {
+      const res = await axios.get(url, {
         params: {
-          fields: "reactions.summary(true)",
+          fields: "reactions.type(LIKE).summary(true).limit(0).as(like),"
+                + "reactions.type(LOVE).summary(true).limit(0).as(love),"
+                + "reactions.type(WOW).summary(true).limit(0).as(wow),"
+                + "reactions.type(HAHA).summary(true).limit(0).as(haha),"
+                + "reactions.type(SAD).summary(true).limit(0).as(sad),"
+                + "reactions.type(ANGRY).summary(true).limit(0).as(angry)",
           limit: 100,
           access_token: token,
         },
+      });
+
+      for (const post of res.data.data || []) {
+        total.like += post.like?.summary?.total_count || 0;
+        total.love += post.love?.summary?.total_count || 0;
+        total.wow += post.wow?.summary?.total_count || 0;
+        total.haha += post.haha?.summary?.total_count || 0;
+        total.sad += post.sad?.summary?.total_count || 0;
+        total.angry += post.angry?.summary?.total_count || 0;
       }
-    );
 
-    let total = 0;
-
-    for (const post of res.data.data || []) {
-      total += post.reactions?.summary?.total_count || 0;
+      url = res.data.paging?.next || null;
     }
-
-    return total;
   } catch (err) {
     console.log("❌ REACTIONS ERROR:", err.response?.data || err.message);
-    return 0;
   }
+
+  return total;
 }
 
 // =========================
-// 🔗 SHARES REALES
+// 🔥 SHARES
 // =========================
 async function getShares(pageId, token) {
-  try {
-    let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
-    let total = 0;
+  let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
+  let total = 0;
 
+  try {
     while (url) {
       const res = await axios.get(url, {
         params: {
@@ -104,30 +116,22 @@ async function getShares(pageId, token) {
 
       url = res.data.paging?.next || null;
     }
-
-    return total;
   } catch (err) {
     console.log("❌ SHARE ERROR:", err.response?.data || err.message);
-    return 0;
   }
+
+  return total;
 }
 
 // =========================
 // 🚀 MAIN
 // =========================
 async function main() {
-  const { data: pages, error } = await supabase
-    .from("pages")
-    .select("*");
+  const { data: pages } = await supabase.from("pages").select("*");
 
-  if (error) {
-    console.log("❌ SUPABASE ERROR:", error.message);
-    return;
-  }
+  const day = getYesterdayCuba();
 
-  const { since, until, date } = getYesterdayCuba();
-
-  console.log("📅 Día:", date);
+  console.log("📅 Día:", day);
 
   for (const page of pages) {
     const fbPageId = page.id_page;
@@ -139,13 +143,13 @@ async function main() {
     console.log(`📊 Página ${dbPageId}`);
 
     // =========================
-    // ❌ EVITAR DUPLICADOS
+    // EVITAR DUPLICADOS
     // =========================
     const { data: exists } = await supabase
       .from("reporte_diario")
       .select("id")
       .eq("pagina", dbPageId)
-      .eq("fecha", date)
+      .eq("fecha", day)
       .maybeSingle();
 
     if (exists) {
@@ -154,74 +158,79 @@ async function main() {
     }
 
     // =========================
-    // 📊 METRICS BASE
+    // MÉTRICAS BASE
     // =========================
     const impresiones = await getMetric(
       fbPageId,
       token,
       "page_impressions_unique",
-      since,
-      until
+      day,
+      day
     );
 
     const engagement = await getMetric(
       fbPageId,
       token,
-      "page_engaged_users",
-      since,
-      until
+      "page_post_engagements",
+      day,
+      day
     );
 
     const clicks = await getMetric(
       fbPageId,
       token,
       "page_consumptions",
-      since,
-      until
+      day,
+      day
     );
 
-    // =========================
-    // 🔥 REACTIONS + SHARES
-    // =========================
     const reactions = await getReactions(fbPageId, token);
     const share = await getShares(fbPageId, token);
 
+    const totalReactions =
+      reactions.like +
+      reactions.love +
+      reactions.wow +
+      reactions.haha +
+      reactions.sad +
+      reactions.angry;
+
     // =========================
-    // 📊 RATE ENGAGEMENT
+    // RATE ENGAGEMENT (%)
     // =========================
     const rate_engagement =
-      impresiones > 0 ? (engagement / impresiones) * 100 : 0;
+      impresiones > 0
+        ? Number(((engagement / impresiones) * 100).toFixed(2))
+        : 0;
 
     const result = {
       impresiones,
       engagement,
-      reactions,
+      reactions: totalReactions,
       share,
       clicks,
-      rate_engagement: Number(rate_engagement.toFixed(2)),
+      rate_engagement,
     };
 
     console.log("📈", result);
 
     // =========================
-    // 💾 INSERT
+    // INSERT SUPABASE
     // =========================
-    const { error: insertError } = await supabase
-      .from("reporte_diario")
-      .insert({
-        pagina: dbPageId,
-        fecha: date,
-        impresiones,
-        engagement,
-        reactions,
-        share,
-        clicks,
-        rate_engagement: result.rate_engagement,
-        created_at: new Date().toISOString(),
-      });
+    const { error } = await supabase.from("reporte_diario").insert({
+      pagina: dbPageId,
+      fecha: day,
+      impresiones,
+      engagement,
+      reactions: totalReactions,
+      share,
+      clicks,
+      rate_engagement,
+      created_at: new Date().toISOString(),
+    });
 
-    if (insertError) {
-      console.log("❌ INSERT ERROR:", insertError.message);
+    if (error) {
+      console.log("❌ INSERT ERROR:", error);
     } else {
       console.log(`✅ INSERT ${dbPageId}`);
     }
