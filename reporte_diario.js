@@ -7,7 +7,7 @@ const supabase = createClient(
 );
 
 // =========================
-// 🇨🇺 FECHA CUBA (AYER)
+// 🇨🇺 AYER
 // =========================
 function getYesterdayCuba() {
   const now = new Date();
@@ -20,9 +20,9 @@ function getYesterdayCuba() {
 }
 
 // =========================
-// 📊 METRICS META
+// 📊 METRIC SAFE
 // =========================
-async function getMetric(pageId, token, metric, since, until) {
+async function getMetric(pageId, token, metric, day) {
   try {
     const res = await axios.get(
       `https://graph.facebook.com/v19.0/${pageId}/insights`,
@@ -30,21 +30,19 @@ async function getMetric(pageId, token, metric, since, until) {
         params: {
           metric,
           period: "day",
-          since,
-          until,
-          access_token: token, // 👈 TOKEN POR PÁGINA
+          since: day,
+          until: day,
+          access_token: token,
         },
       }
     );
 
     const values = res.data.data?.[0]?.values || [];
 
-    return values.reduce((sum, item) => {
-      return sum + (Number(item.value) || 0);
-    }, 0);
+    return values.reduce((sum, v) => sum + (Number(v.value) || 0), 0);
 
   } catch (err) {
-    console.log(`❌ METRIC ERROR ${metric}:`, err.response?.data || err.message);
+    // 👇 no romper script si métrica no existe
     return 0;
   }
 }
@@ -62,7 +60,7 @@ async function getShares(pageId, token) {
         params: {
           fields: "shares",
           limit: 100,
-          access_token: token, // 👈 IMPORTANTE
+          access_token: token,
         },
       });
 
@@ -72,9 +70,7 @@ async function getShares(pageId, token) {
 
       url = res.data.paging?.next || null;
     }
-  } catch (err) {
-    console.log("❌ SHARE ERROR:", err.response?.data || err.message);
-  }
+  } catch {}
 
   return total;
 }
@@ -87,23 +83,18 @@ async function main() {
 
   const day = getYesterdayCuba();
 
-  console.log("📅 Procesando día:", day);
+  console.log("📅 Día:", day);
 
   for (const page of pages) {
-    const fbPageId = page.id_page; // Facebook Page ID
-    const dbPageId = page.id;      // ID interno
-    const token = page.token;      // 👈 TOKEN REAL DE ESA PÁGINA
+    const fbPageId = page.id_page;
+    const dbPageId = page.id;
+    const token = page.token;
 
-    if (!fbPageId || !token) {
-      console.log(`⚠️ FALTA DATA page ${dbPageId}`);
-      continue;
-    }
+    if (!fbPageId || !token) continue;
 
-    console.log(`📊 Procesando página ${dbPageId}`);
+    console.log(`📊 Página ${dbPageId}`);
 
-    // =========================
-    // 🔍 EVITAR DUPLICADOS
-    // =========================
+    // evitar duplicados
     const { data: exists } = await supabase
       .from("reporte_diario")
       .select("id_record")
@@ -112,26 +103,24 @@ async function main() {
       .maybeSingle();
 
     if (exists) {
-      console.log(`⏭️ YA EXISTE ${dbPageId}`);
+      console.log("⏭️ Existe");
       continue;
     }
 
     // =========================
-    // 📊 MÉTRICAS
+    // 📊 MÉTRICAS SEGURAS
     // =========================
     const impresiones = await getMetric(
       fbPageId,
       token,
       "page_impressions_unique",
-      day,
       day
     );
 
     const engagement = await getMetric(
       fbPageId,
       token,
-      "page_engaged_users",
-      day,
+      "page_post_engagements",
       day
     );
 
@@ -139,24 +128,19 @@ async function main() {
       fbPageId,
       token,
       "page_actions_post_reactions_total",
-      day,
       day
     );
 
     const share = await getShares(fbPageId, token);
 
-    const result = {
+    console.log("📈", {
       impresiones,
       engagement,
       reactions,
       share,
-    };
+    });
 
-    console.log("📈 Resultado:", result);
-
-    // =========================
-    // 💾 INSERT
-    // =========================
+    // guardar
     await supabase.from("reporte_diario").insert({
       pagina: dbPageId,
       impresiones,
@@ -168,7 +152,7 @@ async function main() {
       created_at: new Date().toISOString(),
     });
 
-    console.log(`✅ INSERT OK ${dbPageId}`);
+    console.log(`✅ INSERT ${dbPageId}`);
   }
 }
 
