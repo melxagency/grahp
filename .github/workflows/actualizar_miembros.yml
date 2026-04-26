@@ -3,7 +3,7 @@ name: Actualizar Miembros
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 1 * * *' # 8:00 PM Cuba (UTC-5)
+    - cron: '0 0 * * *' # 8:00 PM Cuba (UTC-5)
 
 jobs:
   count-members:
