@@ -16,30 +16,6 @@ function getCubaDate() {
 }
 
 // =========================
-// ⛓️ SPLIT EN BLOQUES DE 90 DÍAS
-// =========================
-function splitDateRange(start, end, maxDays = 90) {
-  const ranges = [];
-  let current = new Date(start);
-
-  while (current < end) {
-    const next = new Date(current);
-    next.setDate(next.getDate() + maxDays);
-
-    if (next > end) next.setTime(end.getTime());
-
-    ranges.push({
-      since: new Date(current).toISOString().split("T")[0],
-      until: new Date(next).toISOString().split("T")[0],
-    });
-
-    current = next;
-  }
-
-  return ranges;
-}
-
-// =========================
 // 📊 METRICS META
 // =========================
 async function getMetric(pageId, token, metric, since, until) {
@@ -100,86 +76,79 @@ async function main() {
   const { data: pages } = await supabase.from("pages").select("*");
 
   const today = getCubaDate();
-  const todayStr = today.toISOString().split("T")[0];
+
+  // 👉 SOLO AYER
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const yesterdayStr = yesterday.toISOString().split("T")[0];
 
   for (const page of pages) {
-    const fbPageId = page.id_page; // 👉 Facebook
-    const dbPageId = page.id;      // 👉 Base de datos
+    const fbPageId = page.id_page;
+    const dbPageId = page.id;
     const token = page.token;
 
     if (!fbPageId || !token) continue;
 
     // =========================
-    // 🔍 VERIFICAR SI YA EXISTE
+    // 🔍 VERIFICAR DUPLICADO
     // =========================
     const { data: exists } = await supabase
-      .from("reporte_diario_acumulado")
+      .from("reporte_diario")
       .select("id_record")
       .eq("pagina", dbPageId)
-      .eq("fecha", todayStr)
+      .eq("fecha", yesterdayStr)
       .maybeSingle();
 
     if (exists) {
-      console.log(`⏭️ YA EXISTE ${dbPageId} ${todayStr}`);
+      console.log(`⏭️ YA EXISTE ${dbPageId} ${yesterdayStr}`);
       continue;
     }
 
-    const startDate = new Date(
-      page.fecha_inicio_explotacion || "2023-01-01"
+    // =========================
+    // 📊 SOLO DÍA ANTERIOR
+    // =========================
+    const impresiones = await getMetric(
+      fbPageId,
+      token,
+      "page_impressions_unique",
+      yesterdayStr,
+      yesterdayStr
     );
 
-    const ranges = splitDateRange(startDate, today);
+    const reactions = await getMetric(
+      fbPageId,
+      token,
+      "page_actions_post_reactions_like_total",
+      yesterdayStr,
+      yesterdayStr
+    );
 
-    let impresionesTotal = 0;
-    let reactionsTotal = 0;
-    let engagementTotal = 0;
-
-    // =========================
-    // 🔁 ACUMULAR POR BLOQUES
-    // =========================
-    for (const r of ranges) {
-      impresionesTotal += await getMetric(
-        fbPageId,
-        token,
-        "page_impressions_unique",
-        r.since,
-        r.until
-      );
-
-      reactionsTotal += await getMetric(
-        fbPageId,
-        token,
-        "page_actions_post_reactions_like_total",
-        r.since,
-        r.until
-      );
-
-      engagementTotal += await getMetric(
-        fbPageId,
-        token,
-        "page_post_engagements",
-        r.since,
-        r.until
-      );
-    }
+    const engagement = await getMetric(
+      fbPageId,
+      token,
+      "page_post_engagements",
+      yesterdayStr,
+      yesterdayStr
+    );
 
     const share = await getTotalShares(fbPageId, token);
 
     // =========================
-    // 💾 INSERT
+    // 💾 INSERT DIARIO
     // =========================
-    await supabase.from("reporte_diario_acumulado").insert({
-      pagina: dbPageId, // ✅ ID REAL BD
-      impresiones: impresionesTotal,
-      reaction: reactionsTotal,
-      engagement: engagementTotal,
+    await supabase.from("reporte_diario").insert({
+      pagina: dbPageId,
+      impresiones,
+      reaction: reactions,
+      engagement,
       share,
-      engagement_real: engagementTotal,
-      fecha: todayStr,
+      engagement_real: engagement,
+      fecha: yesterdayStr,
       created_at: new Date().toISOString(),
     });
 
-    console.log(`✅ INSERT ${dbPageId} ${todayStr}`);
+    console.log(`✅ INSERT ${dbPageId} ${yesterdayStr}`);
   }
 }
 
