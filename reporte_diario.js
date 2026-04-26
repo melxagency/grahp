@@ -6,6 +6,8 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
+const FACEBOOK_TOKEN = process.env.PAGE_TOKEN; // ✅ TOKEN GLOBAL
+
 // =========================
 // 🇨🇺 FECHA CUBA
 // =========================
@@ -18,7 +20,7 @@ function getCubaDate() {
 // =========================
 // 📊 METRICS META
 // =========================
-async function getMetric(pageId, token, metric, since, until) {
+async function getMetric(pageId, metric, since, until) {
   try {
     const res = await axios.get(
       `https://graph.facebook.com/v19.0/${pageId}/insights`,
@@ -28,7 +30,7 @@ async function getMetric(pageId, token, metric, since, until) {
           period: "day",
           since,
           until,
-          access_token: token,
+          access_token: FACEBOOK_TOKEN,
         },
       }
     );
@@ -43,7 +45,7 @@ async function getMetric(pageId, token, metric, since, until) {
 // =========================
 // 🔥 SHARE TOTAL POSTS
 // =========================
-async function getTotalShares(pageId, token) {
+async function getTotalShares(pageId) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
   let total = 0;
 
@@ -53,7 +55,7 @@ async function getTotalShares(pageId, token) {
         params: {
           fields: "shares",
           limit: 100,
-          access_token: token,
+          access_token: FACEBOOK_TOKEN,
         },
       });
 
@@ -94,7 +96,7 @@ async function main() {
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
 
-  const startDate = new Date("2026-03-01"); // 🔥 FIJO (el más antiguo)
+  const startDate = new Date("2026-03-01");
 
   const days = generateDays(startDate, yesterday);
 
@@ -102,9 +104,8 @@ async function main() {
     for (const page of pages) {
       const fbPageId = page.id_page;
       const dbPageId = page.id;
-      const token = page.token;
 
-      if (!fbPageId || !token) continue;
+      if (!fbPageId) continue;
 
       // =========================
       // 🔍 EVITAR DUPLICADOS
@@ -119,11 +120,10 @@ async function main() {
       if (exists) continue;
 
       // =========================
-      // 📊 METRICS DEL DÍA
+      // 📊 METRICS
       // =========================
       const impresiones = await getMetric(
         fbPageId,
-        token,
         "page_impressions_unique",
         day,
         day
@@ -131,7 +131,6 @@ async function main() {
 
       const reactions = await getMetric(
         fbPageId,
-        token,
         "page_actions_post_reactions_like_total",
         day,
         day
@@ -139,13 +138,12 @@ async function main() {
 
       const engagement = await getMetric(
         fbPageId,
-        token,
         "page_post_engagements",
         day,
         day
       );
 
-      const share = await getTotalShares(fbPageId, token);
+      const share = await getTotalShares(fbPageId);
 
       // =========================
       // 💾 INSERT
