@@ -3,11 +3,17 @@ name: Reporte Diario Completo
 on:
   workflow_dispatch:
   schedule:
-   - cron: "0 23 * * *" # 8 PM Cuba (UTC-5)
+    - cron: "0 23 * * *" # 8 PM Cuba (UTC-5)
 
 jobs:
   report:
     runs-on: ubuntu-latest
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+      PAGE_TOKEN: ${{ secrets.PAGE_TOKEN }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
     steps:
       - name: Checkout repo
@@ -25,9 +31,6 @@ jobs:
       # 1. Ejecutar script principal
       # =========================
       - name: Run report script
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: node reporte_diario.js
 
       # =========================
