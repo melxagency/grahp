@@ -22,7 +22,7 @@ function getYesterdayCuba() {
 }
 
 // =========================
-// 📊 METRICS META (FIX REAL)
+// 📊 METRICS META
 // =========================
 async function getMetric(pageId, metric, since, until) {
   try {
@@ -41,10 +41,7 @@ async function getMetric(pageId, metric, since, until) {
 
     const values = res.data.data?.[0]?.values || [];
 
-    return values.reduce(
-      (sum, d) => sum + (Number(d.value) || 0),
-      0
-    );
+    return values.reduce((sum, d) => sum + (Number(d.value) || 0), 0);
   } catch (err) {
     console.log(`❌ METRIC ERROR (${metric})`, err.response?.data || err.message);
     return 0;
@@ -52,8 +49,7 @@ async function getMetric(pageId, metric, since, until) {
 }
 
 // =========================
-// 🔥 SHARES (FIX)
-# mejor endpoint sin tokens rotos en insights
+// 🔥 SHARES
 // =========================
 async function getTotalShares(pageId) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
@@ -87,17 +83,17 @@ async function getTotalShares(pageId) {
 // =========================
 async function main() {
   if (!TOKEN) {
-    throw new Error("❌ PAGE_TOKEN no existe en env");
+    throw new Error("❌ PAGE_TOKEN no existe en GitHub Secrets");
   }
 
   const { data: pages } = await supabase.from("pages").select("*");
 
   const day = getYesterdayCuba();
-  const nextDay = new Date(day);
-  nextDay.setDate(nextDay.getDate() + 1);
 
   const since = day;
-  const until = nextDay.toISOString().split("T")[0];
+  const untilDate = new Date(day);
+  untilDate.setDate(untilDate.getDate() + 1);
+  const until = untilDate.toISOString().split("T")[0];
 
   console.log("📅 Procesando día:", day);
 
@@ -110,7 +106,7 @@ async function main() {
     console.log(`📊 Procesando página ${dbPageId}`);
 
     // =========================
-    // 🔍 DUPLICADOS
+    // 🔍 EVITAR DUPLICADOS
     // =========================
     const { data: exists } = await supabase
       .from("reporte_diario")
@@ -125,7 +121,7 @@ async function main() {
     }
 
     // =========================
-    // 📊 MÉTRICAS CORREGIDAS
+    // 📊 MÉTRICAS
     // =========================
     const impresiones = await getMetric(
       fbPageId,
