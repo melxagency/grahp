@@ -1,4 +1,4 @@
-name: Miemrbros Inicio Dia
+name: Miembros Inicio Dia
 on:
   workflow_dispatch:
   schedule:
