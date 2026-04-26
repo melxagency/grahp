@@ -20,36 +20,7 @@ function getYesterdayCuba() {
 }
 
 // =========================
-// 🧠 RANGO AMPLIO (FIX FB)
-// =========================
-function getRange(day) {
-  const start = new Date(day);
-  start.setDate(start.getDate() - 1);
-
-  const end = new Date(day);
-  end.setDate(end.getDate() + 1);
-
-  return {
-    since: start.toISOString(),
-    until: end.toISOString(),
-  };
-}
-
-// =========================
-// 🇨🇺 VALIDAR MISMO DÍA
-// =========================
-function isSameDayCuba(dateStr, targetDay) {
-  const cubaOffset = -5 * 60 * 60 * 1000;
-
-  const d = new Date(new Date(dateStr).getTime() + cubaOffset)
-    .toISOString()
-    .split("T")[0];
-
-  return d === targetDay;
-}
-
-// =========================
-// 📊 INSIGHTS (IMP + ENG)
+// 📊 MÉTRICAS INSIGHTS
 // =========================
 async function getMetric(pageId, token, metric, day) {
   try {
@@ -66,73 +37,49 @@ async function getMetric(pageId, token, metric, day) {
       }
     );
 
-    const values = res.data.data?.[0]?.values || [];
-    return values[0]?.value || 0;
+    return res.data.data?.[0]?.values?.[0]?.value || 0;
   } catch (err) {
-    console.log(`❌ METRIC ERROR ${metric}:`, err.response?.data || err.message);
+    console.log(`❌ ${metric}:`, err.response?.data || err.message);
     return 0;
   }
 }
 
 // =========================
-// ❤️ REACTIONS
-// =========================
-async function getReactions(pageId, token, day) {
-  let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
-  let total = 0;
-
-  const range = getRange(day);
-
-  try {
-    while (url) {
-      const res = await axios.get(url, {
-        params: {
-          fields: "created_time,reactions.summary(true)",
-          since: range.since,
-          until: range.until,
-          limit: 100,
-          access_token: token,
-        },
-      });
-
-      for (const post of res.data.data || []) {
-        if (isSameDayCuba(post.created_time, day)) {
-          total += post.reactions?.summary?.total_count || 0;
-        }
-      }
-
-      url = res.data.paging?.next || null;
-    }
-  } catch (err) {
-    console.log("❌ REACTIONS ERROR:", err.response?.data || err.message);
-  }
-
-  return total;
-}
-
-// =========================
-// 🔥 SHARES
+// 🔥 SHARES (WORKAROUND REAL)
 // =========================
 async function getShares(pageId, token, day) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
   let total = 0;
 
-  const range = getRange(day);
+  // 🔥 rango ampliado para evitar bug timezone
+  const since = new Date(day);
+  since.setDate(since.getDate() - 1);
+
+  const until = new Date(day);
+  until.setDate(until.getDate() + 1);
 
   try {
     while (url) {
       const res = await axios.get(url, {
         params: {
           fields: "created_time,shares",
-          since: range.since,
-          until: range.until,
+          since: since.toISOString(),
+          until: until.toISOString(),
           limit: 100,
           access_token: token,
         },
       });
 
       for (const post of res.data.data || []) {
-        if (isSameDayCuba(post.created_time, day)) {
+        // 🔥 filtrar por día exacto en Cuba
+        const cubaOffset = -5 * 60 * 60 * 1000;
+        const postDay = new Date(
+          new Date(post.created_time).getTime() + cubaOffset
+        )
+          .toISOString()
+          .split("T")[0];
+
+        if (postDay === day) {
           total += post.shares?.count || 0;
         }
       }
@@ -181,7 +128,7 @@ async function main() {
     }
 
     // =========================
-    // 📊 MÉTRICAS
+    // 📊 MÉTRICAS REALES
     // =========================
     const impresiones = await getMetric(
       fbPageId,
@@ -197,7 +144,12 @@ async function main() {
       day
     );
 
-    const reactions = await getReactions(fbPageId, token, day);
+    const reactions = await getMetric(
+      fbPageId,
+      token,
+      "page_actions_post_reactions_total",
+      day
+    );
 
     const share = await getShares(fbPageId, token, day);
 
