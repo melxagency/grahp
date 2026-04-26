@@ -6,8 +6,6 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-const PAGE_TOKEN_GLOBAL = process.env.PAGE_TOKEN; // fallback opcional
-
 // =========================
 // 🇨🇺 AYER (CUBA)
 // =========================
@@ -22,9 +20,9 @@ function getYesterdayCuba() {
 }
 
 // =========================
-// 📊 INSIGHTS METRICS
+// 📊 INSIGHTS GENERALES
 // =========================
-async function getMetric(pageId, token, metric, since, until) {
+async function getMetric(pageId, token, metric, day) {
   try {
     const res = await axios.get(
       `https://graph.facebook.com/v19.0/${pageId}/insights`,
@@ -32,72 +30,38 @@ async function getMetric(pageId, token, metric, since, until) {
         params: {
           metric,
           period: "day",
-          since,
-          until,
+          since: day,
+          until: day,
           access_token: token,
         },
       }
     );
 
-    const values = res.data.data?.[0]?.values || [];
-    return values.reduce((sum, d) => sum + (Number(d.value) || 0), 0);
+    return res.data.data?.[0]?.values?.[0]?.value || 0;
   } catch (err) {
-    console.log(`❌ METRIC ERROR ${metric}:`, err.response?.data || err.message);
+    console.log(`❌ ${metric}:`, err.response?.data || err.message);
     return 0;
   }
 }
 
 // =========================
-// 🔥 REACTIONS (SUMA REAL)
+// 🔥 SHARES REALES (POSTS DEL DÍA)
 // =========================
-async function getReactions(pageId, token, since, until) {
-  try {
-    const res = await axios.get(
-      `https://graph.facebook.com/v19.0/${pageId}/insights`,
-      {
-        params: {
-          metric: "page_actions_post_reactions_total",
-          period: "day",
-          since,
-          until,
-          access_token: token,
-        },
-      }
-    );
-
-    const values = res.data.data?.[0]?.values || [];
-
-    let total = 0;
-
-    for (const v of values) {
-      const val = v.value;
-
-      if (typeof val === "object") {
-        total += Object.values(val).reduce((a, b) => a + (Number(b) || 0), 0);
-      } else {
-        total += Number(val) || 0;
-      }
-    }
-
-    return total;
-  } catch (err) {
-    console.log("❌ REACTIONS ERROR:", err.response?.data || err.message);
-    return 0;
-  }
-}
-
-// =========================
-// 🔥 SHARES (POSTS)
-// =========================
-async function getShares(pageId, token) {
+async function getShares(pageId, token, day) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
   let total = 0;
+
+  const since = new Date(day);
+  const until = new Date(day);
+  until.setDate(until.getDate() + 1);
 
   try {
     while (url) {
       const res = await axios.get(url, {
         params: {
-          fields: "shares",
+          fields: "created_time,shares",
+          since: since.toISOString(),
+          until: until.toISOString(),
           limit: 100,
           access_token: token,
         },
@@ -129,13 +93,13 @@ async function main() {
   for (const page of pages) {
     const fbPageId = page.id_page;
     const dbPageId = page.id;
-    const token = page.token || PAGE_TOKEN_GLOBAL;
+    const token = page.token;
 
     if (!fbPageId || !token) continue;
 
     console.log(`📊 Página ${dbPageId}`);
 
-    // evitar duplicados
+    // 🔍 evitar duplicados
     const { data: exists } = await supabase
       .from("reporte_diario")
       .select("id_record")
@@ -148,11 +112,13 @@ async function main() {
       continue;
     }
 
+    // =========================
+    // 📊 MÉTRICAS DEL DÍA
+    // =========================
     const impresiones = await getMetric(
       fbPageId,
       token,
       "page_impressions_unique",
-      day,
       day
     );
 
@@ -160,13 +126,17 @@ async function main() {
       fbPageId,
       token,
       "page_post_engagements",
-      day,
       day
     );
 
-    const reactions = await getReactions(fbPageId, token, day, day);
+    const reactions = await getMetric(
+      fbPageId,
+      token,
+      "page_actions_post_reactions_total",
+      day
+    );
 
-    const share = await getShares(fbPageId, token);
+    const share = await getShares(fbPageId, token, day);
 
     const result = {
       impresiones,
@@ -175,8 +145,11 @@ async function main() {
       share,
     };
 
-    console.log("📈", result);
+    console.log("📈 Resultado:", result);
 
+    // =========================
+    // 💾 INSERT
+    // =========================
     await supabase.from("reporte_diario").insert({
       pagina: dbPageId,
       impresiones,
