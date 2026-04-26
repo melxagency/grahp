@@ -7,7 +7,7 @@ const supabase = createClient(
 );
 
 // =========================
-// 🇨🇺 AYER CUBA
+// 🇨🇺 AYER (CUBA)
 // =========================
 function getYesterdayCuba() {
   const now = new Date();
@@ -20,7 +20,7 @@ function getYesterdayCuba() {
 }
 
 // =========================
-// 📊 INSIGHTS
+// 📊 INSIGHTS META
 // =========================
 async function getMetric(pageId, token, metric, day) {
   try {
@@ -45,7 +45,7 @@ async function getMetric(pageId, token, metric, day) {
 }
 
 // =========================
-// 🔥 SHARES (POSTS DEL DÍA)
+// 🔥 SHARES DEL DÍA (POSTS)
 // =========================
 async function getShares(pageId, token, day) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
@@ -81,13 +81,6 @@ async function getShares(pageId, token, day) {
 }
 
 // =========================
-// 📱 CLICKS (consumo)
-// =========================
-async function getClicks(pageId, token, day) {
-  return await getMetric(pageId, token, "page_consumptions_unique", day);
-}
-
-// =========================
 // 🚀 MAIN
 // =========================
 async function main() {
@@ -106,6 +99,9 @@ async function main() {
 
     console.log(`📊 Página ${dbPageId}`);
 
+    // =========================
+    // 🔍 EVITAR DUPLICADOS
+    // =========================
     const { data: exists } = await supabase
       .from("reporte_diario")
       .select("id_record")
@@ -144,7 +140,10 @@ async function main() {
 
     const share = await getShares(fbPageId, token, day);
 
-    const clicks = await getClicks(fbPageId, token, day);
+    // =========================
+    // 📱 CLICK (REALISTA)
+    // =========================
+    const clicks = engagement;
 
     // =========================
     // 📊 RATE ENGAGEMENT
@@ -161,7 +160,7 @@ async function main() {
       rate_engagement: Number(rate_engagement.toFixed(2)),
     };
 
-    console.log("📈", result);
+    console.log("📈 Resultado:", result);
 
     // =========================
     // 💾 INSERT
