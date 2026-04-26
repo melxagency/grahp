@@ -16,7 +16,22 @@ function getCubaDate() {
 }
 
 // =========================
+// 🕐 CONVERTIR A UNIX TIMESTAMP
+// ✅ Meta prefiere timestamps Unix en vez de strings YYYY-MM-DD
+// =========================
+function toUnix(dateStr) {
+  return Math.floor(new Date(dateStr + "T00:00:00Z").getTime() / 1000);
+}
+
+function nextDay(dateStr) {
+  const d = new Date(dateStr + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().split("T")[0];
+}
+
+// =========================
 // 📊 METRICS META
+// ✅ Usa timestamps Unix + maneja values como objeto y como array
 // =========================
 async function getMetric(pageId, token, metric, since, until) {
   try {
@@ -26,21 +41,62 @@ async function getMetric(pageId, token, metric, since, until) {
         params: {
           metric,
           period: "day",
-          since,
-          until,        // ✅ until debe ser día+1 (se pasa desde el caller)
+          since: toUnix(since),
+          until: toUnix(until),
           access_token: token,
         },
       }
     );
-    const values = res.data?.data?.[0]?.values || [];
-    return values.reduce((s, d) => s + (Number(d.value) || 0), 0);
-  } catch {
+
+    const data = res.data?.data || [];
+    if (!data.length) return 0;
+
+    let total = 0;
+    for (const entry of data) {
+      const values = entry.values || [];
+      for (const v of values) {
+        // ✅ A veces value es un objeto {like:1, haha:2} en vez de número
+        if (typeof v.value === "object" && v.value !== null) {
+          total += Object.values(v.value).reduce((s, n) => s + (Number(n) || 0), 0);
+        } else {
+          total += Number(v.value) || 0;
+        }
+      }
+    }
+    return total;
+  } catch (err) {
+    console.error(`❌ Error en métrica ${metric} (página ${pageId}):`, err.response?.data?.error || err.message);
     return 0;
   }
 }
 
 // =========================
-// 🔥 SHARE TOTAL POSTS
+// 👥 FANS / SEGUIDORES
+// ✅ Métrica separada porque usa endpoint distinto
+// =========================
+async function getFans(pageId, token) {
+  try {
+    const res = await axios.get(
+      `https://graph.facebook.com/v19.0/${pageId}`,
+      {
+        params: {
+          fields: "fan_count,followers_count",
+          access_token: token,
+        },
+      }
+    );
+    return {
+      fans: res.data?.fan_count || 0,
+      followers: res.data?.followers_count || 0,
+    };
+  } catch {
+    return { fans: 0, followers: 0 };
+  }
+}
+
+// =========================
+// 🔥 SHARES TOTALES DE POSTS
+// ✅ Igual que antes, funciona bien
 // =========================
 async function getTotalShares(pageId, token) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
@@ -59,7 +115,9 @@ async function getTotalShares(pageId, token) {
       }
       url = res.data?.paging?.next || null;
     }
-  } catch {}
+  } catch (err) {
+    console.error(`❌ Error en shares (página ${pageId}):`, err.response?.data?.error || err.message);
+  }
   return total;
 }
 
@@ -77,19 +135,15 @@ function generateDays(start, end) {
 }
 
 // =========================
-// ➕ SUMAR UN DÍA A FECHA STRING
-// =========================
-function nextDay(dateStr) {
-  const d = new Date(dateStr + "T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() + 1);
-  return d.toISOString().split("T")[0];
-}
-
-// =========================
 // 🚀 MAIN
 // =========================
 async function main() {
-  const { data: pages } = await supabase.from("pages").select("*");
+  const { data: pages, error: pagesError } = await supabase.from("pages").select("*");
+
+  if (pagesError || !pages?.length) {
+    console.error("❌ No se pudieron cargar las páginas:", pagesError);
+    return;
+  }
 
   const today = getCubaDate();
   const yesterday = new Date(today);
@@ -98,13 +152,20 @@ async function main() {
   const startDate = new Date("2026-03-01");
   const days = generateDays(startDate, yesterday);
 
+  console.log(`📅 Procesando ${days.length} días para ${pages.length} páginas...`);
+
   for (const day of days) {
+    const until = nextDay(day);
+
     for (const page of pages) {
-      const fbPageId = page.id_page;   // ✅ corregido sintaxis
-      const dbPageId = page.id;        // ✅ corregido sintaxis
+      const fbPageId = page.id_page;
+      const dbPageId = page.id;
       const token = page.token;
 
-      if (!fbPageId || !token) continue;
+      if (!fbPageId || !token) {
+        console.warn(`⚠️ Página ${dbPageId} sin id_page o token, saltando...`);
+        continue;
+      }
 
       // =========================
       // 🔍 EVITAR DUPLICADOS
@@ -116,42 +177,40 @@ async function main() {
         .eq("fecha", day)
         .maybeSingle();
 
-      if (exists) continue;
+      if (exists) {
+        console.log(`⏭️  ${dbPageId} → ${day} ya existe, saltando...`);
+        continue;
+      }
 
       // =========================
-      // 📊 METRICS DEL DÍA
-      // ✅ until = day+1 para que Meta devuelva datos del día exacto
+      // 📊 OBTENER MÉTRICAS
+      // ✅ Todas las métricas con since=day, until=day+1
       // =========================
-      const until = nextDay(day);
-
-      const impresiones = await getMetric(
-        fbPageId, token, "page_impressions_unique", day, until
-      );
-      const reactions = await getMetric(
-        fbPageId, token, "page_actions_post_reactions_like_total", day, until
-      );
-      const engagement = await getMetric(
-        fbPageId, token, "page_post_engagements", day, until
-      );
-      const share = await getTotalShares(fbPageId, token);
+      const [impresiones, reactions, engagement, reach, share] = await Promise.all([
+        getMetric(fbPageId, token, "page_impressions",               day, until),
+        getMetric(fbPageId, token, "page_actions_post_reactions_like_total", day, until),
+        getMetric(fbPageId, token, "page_post_engagements",          day, until),
+        getMetric(fbPageId, token, "page_impressions_unique",        day, until),
+        getTotalShares(fbPageId, token),
+      ]);
 
       // =========================
       // 💾 INSERT
       // =========================
-      await supabase.from("reporte_diario").insert({
+      const { error: insertError } = await supabase.from("reporte_diario").insert({
         pagina: dbPageId,
         impresiones,
         reaction: reactions,
         engagement,
         share,
+        reach,
         engagement_real: engagement,
         fecha: day,
         created_at: new Date().toISOString(),
       });
 
-      console.log(`✅ ${dbPageId} → ${day}`);
-    }
-  }
-}
-
-main();
+      if (insertError) {
+        console.error(`❌ Error insertando ${dbPageId} → ${day}:`, insertError.message);
+      } else {
+        console.log(`✅ ${dbPageId} → ${day} | imp:${impresiones} react:${reactions} eng:${engagement} reach:${reach} shares:${share}`);
+      }
