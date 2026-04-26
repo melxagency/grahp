@@ -1,13 +1,14 @@
 const axios = require("axios");
 const { createClient } = require("@supabase/supabase-js");
 
+// ⚠️ IMPORTANTE: SERVICE ROLE KEY
 const supabase = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_KEY
+  process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
 // =========================
-// 🇨🇺 AYER (CUBA)
+// 🇨🇺 AYER
 // =========================
 function getYesterdayCuba() {
   const now = new Date();
@@ -20,7 +21,7 @@ function getYesterdayCuba() {
 }
 
 // =========================
-// 📊 INSIGHTS META
+// 📊 INSIGHTS
 // =========================
 async function getMetric(pageId, token, metric, day) {
   try {
@@ -45,7 +46,7 @@ async function getMetric(pageId, token, metric, day) {
 }
 
 // =========================
-// 🔥 SHARES DEL DÍA (POSTS)
+// 🔥 SHARES
 // =========================
 async function getShares(pageId, token, day) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
@@ -84,7 +85,14 @@ async function getShares(pageId, token, day) {
 // 🚀 MAIN
 // =========================
 async function main() {
-  const { data: pages } = await supabase.from("pages").select("*");
+  const { data: pages, error: pagesError } = await supabase
+    .from("pages")
+    .select("*");
+
+  if (pagesError) {
+    console.log("❌ ERROR pages:", pagesError);
+    return;
+  }
 
   const day = getYesterdayCuba();
 
@@ -100,7 +108,7 @@ async function main() {
     console.log(`📊 Página ${dbPageId}`);
 
     // =========================
-    // 🔍 EVITAR DUPLICADOS
+    // 🔍 DUPLICADOS
     // =========================
     const { data: exists } = await supabase
       .from("reporte_diario")
@@ -140,32 +148,12 @@ async function main() {
 
     const share = await getShares(fbPageId, token, day);
 
-    // =========================
-    // 📱 CLICK (REALISTA)
-    // =========================
     const clicks = engagement;
 
-    // =========================
-    // 📊 RATE ENGAGEMENT
-    // =========================
     const rate_engagement =
       impresiones > 0 ? (engagement / impresiones) * 100 : 0;
 
-    const result = {
-      impresiones,
-      engagement,
-      reactions,
-      share,
-      clicks,
-      rate_engagement: Number(rate_engagement.toFixed(2)),
-    };
-
-    console.log("📈 Resultado:", result);
-
-    // =========================
-    // 💾 INSERT
-    // =========================
-    await supabase.from("reporte_diario").insert({
+    const payload = {
       pagina: dbPageId,
       impresiones,
       engagement,
@@ -176,9 +164,20 @@ async function main() {
       engagement_real: engagement,
       fecha: day,
       created_at: new Date().toISOString(),
-    });
+    };
 
-    console.log(`✅ INSERT ${dbPageId}`);
+    // =========================
+    // 💾 INSERT CON DEBUG REAL
+    // =========================
+    const { error: insertError } = await supabase
+      .from("reporte_diario")
+      .insert(payload);
+
+    if (insertError) {
+      console.log("❌ INSERT ERROR:", insertError);
+    } else {
+      console.log(`✅ INSERT OK ${dbPageId}`);
+    }
   }
 }
 
