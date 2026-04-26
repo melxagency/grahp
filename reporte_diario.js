@@ -6,6 +6,8 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
+const FACEBOOK_TOKEN = process.env.PAGE_TOKEN; // ✅ TOKEN GLOBAL (GitHub Secrets)
+
 // =========================
 // 🇨🇺 FECHA CUBA
 // =========================
@@ -16,9 +18,9 @@ function getCubaDate() {
 }
 
 // =========================
-// 📊 METRICS META
+// 📊 METRICS META (DÍA ÚNICO)
 // =========================
-async function getMetric(pageId, token, metric, since, until) {
+async function getMetric(pageId, metric, day) {
   try {
     const res = await axios.get(
       `https://graph.facebook.com/v19.0/${pageId}/insights`,
@@ -26,25 +28,25 @@ async function getMetric(pageId, token, metric, since, until) {
         params: {
           metric,
           period: "day",
-          since,
-          until,
-          access_token: token,
+          since: day,
+          until: day,
+          access_token: FACEBOOK_TOKEN,
         },
       }
     );
 
     const values = res.data.data?.[0]?.values || [];
-    return values.reduce((s, d) => s + (Number(d.value) || 0), 0);
+    return values.reduce((sum, v) => sum + (Number(v.value) || 0), 0);
   } catch (err) {
-    console.log("METRIC ERROR:", metric, err.response?.data || err.message);
+    console.log("❌ METRIC ERROR:", metric, err.response?.data || err.message);
     return 0;
   }
 }
 
 // =========================
-// 🔥 SHARE TOTAL POSTS
+// 🔥 SHARES (POSTS)
 // =========================
-async function getTotalShares(pageId, token) {
+async function getTotalShares(pageId) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
   let total = 0;
 
@@ -54,7 +56,7 @@ async function getTotalShares(pageId, token) {
         params: {
           fields: "shares",
           limit: 100,
-          access_token: token,
+          access_token: FACEBOOK_TOKEN,
         },
       });
 
@@ -64,7 +66,9 @@ async function getTotalShares(pageId, token) {
 
       url = res.data.paging?.next || null;
     }
-  } catch {}
+  } catch (err) {
+    console.log("❌ SHARE ERROR:", err.response?.data || err.message);
+  }
 
   return total;
 }
@@ -81,74 +85,74 @@ async function main() {
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
 
-  const yesterdayStr = yesterday.toISOString().split("T")[0];
+  const dateStr = yesterday.toISOString().split("T")[0];
+
+  console.log("📅 Procesando día:", dateStr);
 
   for (const page of pages) {
     const fbPageId = page.id_page;
     const dbPageId = page.id;
-    const token = page.token;
 
-    if (!fbPageId || !token) continue;
+    if (!fbPageId) continue;
 
     // =========================
-    // 🔍 VERIFICAR DUPLICADO
+    // 🔍 EVITAR DUPLICADOS
     // =========================
     const { data: exists } = await supabase
       .from("reporte_diario")
       .select("id_record")
       .eq("pagina", dbPageId)
-      .eq("fecha", yesterdayStr)
+      .eq("fecha", dateStr)
       .maybeSingle();
 
     if (exists) {
-      console.log(`⏭️ YA EXISTE ${dbPageId} ${yesterdayStr}`);
+      console.log(`⏭️ YA EXISTE ${dbPageId} ${dateStr}`);
       continue;
     }
 
     // =========================
-    // 📊 SOLO DÍA ANTERIOR
+    // 📊 MÉTRICAS DEL DÍA
     // =========================
     const impresiones = await getMetric(
       fbPageId,
-      token,
       "page_impressions_unique",
-      yesterdayStr,
-      yesterdayStr
+      dateStr
     );
 
     const reactions = await getMetric(
       fbPageId,
-      token,
       "page_actions_post_reactions_like_total",
-      yesterdayStr,
-      yesterdayStr
+      dateStr
     );
 
     const engagement = await getMetric(
       fbPageId,
-      token,
       "page_post_engagements",
-      yesterdayStr,
-      yesterdayStr
+      dateStr
     );
 
-    const share = await getTotalShares(fbPageId, token);
+    const share = await getTotalShares(fbPageId);
 
     // =========================
-    // 💾 INSERT DIARIO
+    // 💾 INSERT
     // =========================
     await supabase.from("reporte_diario").insert({
       pagina: dbPageId,
       impresiones,
       reaction: reactions,
       engagement,
-      share,
       engagement_real: engagement,
-      fecha: yesterdayStr,
+      share,
+      fecha: dateStr,
       created_at: new Date().toISOString(),
     });
 
-    console.log(`✅ INSERT ${dbPageId} ${yesterdayStr}`);
+    console.log(`✅ INSERT OK ${dbPageId} ${dateStr}`, {
+      impresiones,
+      engagement,
+      reactions,
+      share,
+    });
   }
 }
 
