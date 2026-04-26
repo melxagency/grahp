@@ -14,6 +14,12 @@ function getYesterdayCuba() {
   return cuba.toISOString().split("T")[0];
 }
 
+function nextDay(dateStr) {
+  const d = new Date(dateStr + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().split("T")[0];
+}
+
 async function getMetric(pageId, token, metric, since, until) {
   try {
     const res = await axios.get(
@@ -52,6 +58,7 @@ async function getShares(pageId, token, since, until) {
 async function main() {
   const { data: pages } = await supabase.from("pages").select("*");
   const day = getYesterdayCuba();
+  const until = nextDay(day); // ✅ since < until siempre
   console.log("📅 Día:", day);
 
   for (const page of pages) {
@@ -65,7 +72,7 @@ async function main() {
 
     const { data: exists } = await supabase
       .from("reporte_diario")
-      .select("id")
+      .select("id_record")
       .eq("pagina", dbId)
       .eq("fecha", day)
       .maybeSingle();
@@ -75,16 +82,16 @@ async function main() {
       continue;
     }
 
-    const impresiones = await getMetric(fbId, token, "page_impressions_unique", day, day);
-    const reactions = await getMetric(fbId, token, "page_actions_post_reactions_like_total", day, day);
-    const share = await getShares(fbId, token, day, day);
+    const impresiones = await getMetric(fbId, token, "page_impressions_unique", day, until);
+    const reactions   = await getMetric(fbId, token, "page_actions_post_reactions_like_total", day, until);
+    const share       = await getShares(fbId, token, day, until);
 
     console.log("📈", { impresiones, reactions, share });
 
     const { error } = await supabase.from("reporte_diario").insert({
       pagina: dbId,
       impresiones,
-      reaction: reactions,
+      reaction: reactions, // ✅ ajusta este nombre si la columna se llama distinto
       share,
       fecha: day,
       created_at: new Date().toISOString(),
