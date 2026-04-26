@@ -13,16 +13,16 @@ const TOKEN = process.env.PAGE_TOKEN;
 // =========================
 function getYesterdayCuba() {
   const now = new Date();
-  const cubaOffset = -5 * 60 * 60 * 1000;
+  const cubaOffsetMs = -5 * 60 * 60 * 1000;
 
-  const cubaTime = new Date(now.getTime() + cubaOffset);
-  cubaTime.setDate(cubaTime.getDate() - 1);
+  const cuba = new Date(now.getTime() + cubaOffsetMs);
+  cuba.setDate(cuba.getDate() - 1);
 
-  return cubaTime.toISOString().split("T")[0];
+  return cuba.toISOString().split("T")[0];
 }
 
 // =========================
-// 📊 METRICAS META
+// 📊 METRICAS META (CORRECTO)
 // =========================
 async function getMetric(pageId, metric, since, until) {
   try {
@@ -41,41 +41,63 @@ async function getMetric(pageId, metric, since, until) {
 
     const values = res.data.data?.[0]?.values || [];
 
-    return values.reduce(
-      (sum, item) => sum + (Number(item.value) || 0),
-      0
-    );
+    return values.reduce((sum, item) => {
+      return sum + (Number(item.value) || 0);
+    }, 0);
+
   } catch (err) {
-    console.log(`❌ METRIC ERROR ${metric}`, err.response?.data || err.message);
+    console.log(`❌ METRIC ERROR ${metric}:`, err.response?.data || err.message);
     return 0;
   }
+}
+
+// =========================
+// 🔥 SHARES (POSTS)
+// =========================
+async function getShares(pageId) {
+  let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
+  let total = 0;
+
+  try {
+    while (url) {
+      const res = await axios.get(url, {
+        params: {
+          fields: "shares",
+          limit: 100,
+          access_token: TOKEN,
+        },
+      });
+
+      for (const post of res.data.data || []) {
+        total += post.shares?.count || 0;
+      }
+
+      url = res.data.paging?.next || null;
+    }
+  } catch (err) {
+    console.log("❌ SHARE ERROR:", err.response?.data || err.message);
+  }
+
+  return total;
 }
 
 // =========================
 // 🚀 MAIN
 // =========================
 async function main() {
-  if (!TOKEN) {
-    throw new Error("❌ PAGE_TOKEN no encontrado en GitHub Secrets");
-  }
-
   const { data: pages } = await supabase.from("pages").select("*");
 
   const day = getYesterdayCuba();
 
-  const nextDay = new Date(day);
-  nextDay.setDate(nextDay.getDate() + 1);
-
-  const since = day;
-  const until = nextDay.toISOString().split("T")[0];
-
   console.log("📅 Procesando día:", day);
 
   for (const page of pages) {
-    const fbPageId = page.id_page;
-    const dbPageId = page.id;
+    const fbPageId = page.id_page; // Facebook ID
+    const dbPageId = page.id;      // ID interno BD
 
-    if (!fbPageId) continue;
+    if (!fbPageId || !TOKEN) continue;
+
+    console.log(`📊 Procesando página ${dbPageId}`);
 
     // =========================
     // 🔍 EVITAR DUPLICADOS
@@ -92,31 +114,40 @@ async function main() {
       continue;
     }
 
-    console.log(`📊 Procesando página ${dbPageId}`);
-
     // =========================
-    // 📊 MÉTRICAS BASE
+    // 📊 MÉTRICAS (CORRECTAS)
     // =========================
     const impresiones = await getMetric(
       fbPageId,
-      "page_impressions",
-      since,
-      until
+      "page_impressions_unique",
+      day,
+      day
     );
 
     const engagement = await getMetric(
       fbPageId,
-      "page_post_engagements",
-      since,
-      until
+      "page_engaged_users",
+      day,
+      day
     );
 
     const reactions = await getMetric(
       fbPageId,
       "page_actions_post_reactions_total",
-      since,
-      until
+      day,
+      day
     );
+
+    const share = await getShares(fbPageId);
+
+    const result = {
+      impresiones,
+      engagement,
+      reactions,
+      share,
+    };
+
+    console.log("📈 Resultado:", result);
 
     // =========================
     // 💾 INSERT
@@ -126,7 +157,7 @@ async function main() {
       impresiones,
       engagement,
       reaction: reactions,
-      share: 0,
+      share,
       engagement_real: engagement,
       fecha: day,
       created_at: new Date().toISOString(),
