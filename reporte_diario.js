@@ -7,7 +7,7 @@ const supabase = createClient(
 );
 
 // =========================
-// 🇨🇺 AYER (CUBA)
+// 🇨🇺 AYER CUBA
 // =========================
 function getYesterdayCuba() {
   const now = new Date();
@@ -20,7 +20,7 @@ function getYesterdayCuba() {
 }
 
 // =========================
-// 📊 INSIGHTS GENERALES
+// 📊 INSIGHTS
 // =========================
 async function getMetric(pageId, token, metric, day) {
   try {
@@ -45,7 +45,7 @@ async function getMetric(pageId, token, metric, day) {
 }
 
 // =========================
-// 🔥 SHARES REALES (POSTS DEL DÍA)
+// 🔥 SHARES (POSTS DEL DÍA)
 // =========================
 async function getShares(pageId, token, day) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
@@ -81,6 +81,13 @@ async function getShares(pageId, token, day) {
 }
 
 // =========================
+// 📱 CLICKS (consumo)
+// =========================
+async function getClicks(pageId, token, day) {
+  return await getMetric(pageId, token, "page_consumptions_unique", day);
+}
+
+// =========================
 // 🚀 MAIN
 // =========================
 async function main() {
@@ -99,7 +106,6 @@ async function main() {
 
     console.log(`📊 Página ${dbPageId}`);
 
-    // 🔍 evitar duplicados
     const { data: exists } = await supabase
       .from("reporte_diario")
       .select("id_record")
@@ -113,7 +119,7 @@ async function main() {
     }
 
     // =========================
-    // 📊 MÉTRICAS DEL DÍA
+    // 📊 MÉTRICAS
     // =========================
     const impresiones = await getMetric(
       fbPageId,
@@ -138,14 +144,24 @@ async function main() {
 
     const share = await getShares(fbPageId, token, day);
 
+    const clicks = await getClicks(fbPageId, token, day);
+
+    // =========================
+    // 📊 RATE ENGAGEMENT
+    // =========================
+    const rate_engagement =
+      impresiones > 0 ? (engagement / impresiones) * 100 : 0;
+
     const result = {
       impresiones,
       engagement,
       reactions,
       share,
+      clicks,
+      rate_engagement: Number(rate_engagement.toFixed(2)),
     };
 
-    console.log("📈 Resultado:", result);
+    console.log("📈", result);
 
     // =========================
     // 💾 INSERT
@@ -156,6 +172,8 @@ async function main() {
       engagement,
       reaction: reactions,
       share,
+      clicks,
+      rate_engagement: Number(rate_engagement.toFixed(2)),
       engagement_real: engagement,
       fecha: day,
       created_at: new Date().toISOString(),
