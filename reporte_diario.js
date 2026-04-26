@@ -29,11 +29,33 @@ async function getMetric(pageId, token, metric, since, until) {
       }
     );
     const values = res.data.data?.[0]?.values || [];
-    return values.reduce((sum, v) => sum + (Number(v.value) || 0), 0);
+    return values.reduce((sum, v) => {
+      if (typeof v.value === "object" && v.value !== null) {
+        return sum + Object.values(v.value).reduce((s, n) => s + (Number(n) || 0), 0);
+      }
+      return sum + (Number(v.value) || 0);
+    }, 0);
   } catch (err) {
     console.log(`❌ METRIC ERROR ${metric}:`, err.response?.data || err.message);
     return 0;
   }
+}
+
+async function getReactions(pageId, token, since, until) {
+  const tipos = [
+    "page_actions_post_reactions_like_total",
+    "page_actions_post_reactions_love_total",
+    "page_actions_post_reactions_wow_total",
+    "page_actions_post_reactions_haha_total",
+    "page_actions_post_reactions_sorry_total",
+    "page_actions_post_reactions_anger_total",
+  ];
+
+  let total = 0;
+  for (const metric of tipos) {
+    total += await getMetric(pageId, token, metric, since, until);
+  }
+  return total;
 }
 
 async function getShares(pageId, token, since, until) {
@@ -42,9 +64,16 @@ async function getShares(pageId, token, since, until) {
   try {
     while (url) {
       const res = await axios.get(url, {
-        params: { fields: "shares,created_time", limit: 100, since, until, access_token: token },
+        params: {
+          fields: "shares,created_time",
+          limit: 100,
+          since,
+          until,
+          access_token: token,
+        },
       });
-      for (const post of res.data.data || []) {
+      const posts = res.data.data || [];
+      for (const post of posts) {
         total += post.shares?.count || 0;
       }
       url = res.data.paging?.next || null;
@@ -57,9 +86,12 @@ async function getShares(pageId, token, since, until) {
 
 async function main() {
   const { data: pages } = await supabase.from("pages").select("*");
+
+  // ✅ Siempre el día anterior en hora Cuba
   const day = getYesterdayCuba();
   const until = nextDay(day);
-  console.log("📅 Día:", day);
+
+  console.log(`📅 Procesando día: ${day} (until: ${until})`);
 
   for (const page of pages) {
     const fbId = page.id_page;
@@ -70,39 +102,35 @@ async function main() {
 
     console.log(`📊 Página ${dbId}`);
 
-    const { data: exists } = await supabase
-      .from("reporte_diario")
-      .select("id_record")
-      .eq("pagina", dbId)
-      .eq("fecha", day)
-      .maybeSingle();
-
-    if (exists) {
-      console.log(`⏭️ Ya existe ${dbId}`);
-      continue;
-    }
-
-    const impresiones = await getMetric(fbId, token, "page_impressions_unique", day, until);
-    const reactions   = await getMetric(fbId, token, "page_actions_post_reactions_total", day, until); // ✅ total global
-    const share       = await getShares(fbId, token, day, until);
+    const [impresiones, reactions, share] = await Promise.all([
+      getMetric(fbId, token, "page_impressions_unique", day, until),
+      getReactions(fbId, token, day, until),
+      getShares(fbId, token, day, until),
+    ]);
 
     console.log("📈", { impresiones, reactions, share });
 
-    const { error } = await supabase.from("reporte_diario").insert({
-      pagina: dbId,
-      impresiones,
-      reaction: reactions,
-      share,
-      fecha: day,
-      created_at: new Date().toISOString(),
-    });
+    // ✅ Upsert: inserta o actualiza si ya existe (pagina + fecha)
+    const { error } = await supabase.from("reporte_diario").upsert(
+      {
+        pagina: dbId,
+        impresiones,
+        reaction: reactions,
+        share,
+        fecha: day,
+        created_at: new Date().toISOString(),
+      },
+      { onConflict: "pagina,fecha" }
+    );
 
     if (error) {
-      console.log("❌ INSERT ERROR:", error);
+      console.log("❌ UPSERT ERROR:", error);
     } else {
-      console.log(`✅ INSERT ${dbId}`);
+      console.log(`✅ OK ${dbId} → ${day}`);
     }
   }
+
+  console.log("🎉 Completado.");
 }
 
 main();
