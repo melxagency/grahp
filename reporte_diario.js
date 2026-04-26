@@ -6,8 +6,6 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-const TOKEN = process.env.PAGE_TOKEN;
-
 // =========================
 // 🇨🇺 FECHA CUBA (AYER)
 // =========================
@@ -22,9 +20,9 @@ function getYesterdayCuba() {
 }
 
 // =========================
-// 📊 METRICAS META (CORRECTO)
+// 📊 METRICS META
 // =========================
-async function getMetric(pageId, metric, since, until) {
+async function getMetric(pageId, token, metric, since, until) {
   try {
     const res = await axios.get(
       `https://graph.facebook.com/v19.0/${pageId}/insights`,
@@ -34,7 +32,7 @@ async function getMetric(pageId, metric, since, until) {
           period: "day",
           since,
           until,
-          access_token: TOKEN,
+          access_token: token, // 👈 TOKEN POR PÁGINA
         },
       }
     );
@@ -52,9 +50,9 @@ async function getMetric(pageId, metric, since, until) {
 }
 
 // =========================
-// 🔥 SHARES (POSTS)
+// 🔥 SHARES
 // =========================
-async function getShares(pageId) {
+async function getShares(pageId, token) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
   let total = 0;
 
@@ -64,7 +62,7 @@ async function getShares(pageId) {
         params: {
           fields: "shares",
           limit: 100,
-          access_token: TOKEN,
+          access_token: token, // 👈 IMPORTANTE
         },
       });
 
@@ -92,10 +90,14 @@ async function main() {
   console.log("📅 Procesando día:", day);
 
   for (const page of pages) {
-    const fbPageId = page.id_page; // Facebook ID
-    const dbPageId = page.id;      // ID interno BD
+    const fbPageId = page.id_page; // Facebook Page ID
+    const dbPageId = page.id;      // ID interno
+    const token = page.token;      // 👈 TOKEN REAL DE ESA PÁGINA
 
-    if (!fbPageId || !TOKEN) continue;
+    if (!fbPageId || !token) {
+      console.log(`⚠️ FALTA DATA page ${dbPageId}`);
+      continue;
+    }
 
     console.log(`📊 Procesando página ${dbPageId}`);
 
@@ -110,15 +112,16 @@ async function main() {
       .maybeSingle();
 
     if (exists) {
-      console.log(`⏭️ YA EXISTE ${dbPageId} ${day}`);
+      console.log(`⏭️ YA EXISTE ${dbPageId}`);
       continue;
     }
 
     // =========================
-    // 📊 MÉTRICAS (CORRECTAS)
+    // 📊 MÉTRICAS
     // =========================
     const impresiones = await getMetric(
       fbPageId,
+      token,
       "page_impressions_unique",
       day,
       day
@@ -126,6 +129,7 @@ async function main() {
 
     const engagement = await getMetric(
       fbPageId,
+      token,
       "page_engaged_users",
       day,
       day
@@ -133,12 +137,13 @@ async function main() {
 
     const reactions = await getMetric(
       fbPageId,
+      token,
       "page_actions_post_reactions_total",
       day,
       day
     );
 
-    const share = await getShares(fbPageId);
+    const share = await getShares(fbPageId, token);
 
     const result = {
       impresiones,
@@ -163,7 +168,7 @@ async function main() {
       created_at: new Date().toISOString(),
     });
 
-    console.log(`✅ INSERT OK ${dbPageId} ${day}`);
+    console.log(`✅ INSERT OK ${dbPageId}`);
   }
 }
 
