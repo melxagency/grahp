@@ -35,7 +35,7 @@ async function getMetric(pageId, token, metric, since, until) {
 
     const values = res.data.data?.[0]?.values || [];
     return values.reduce((s, d) => s + (Number(d.value) || 0), 0);
-  } catch (err) {
+  } catch {
     return 0;
   }
 }
@@ -69,6 +69,21 @@ async function getTotalShares(pageId, token) {
 }
 
 // =========================
+// 📅 GENERAR DÍAS
+// =========================
+function generateDays(start, end) {
+  const days = [];
+  const current = new Date(start);
+
+  while (current <= end) {
+    days.push(new Date(current).toISOString().split("T")[0]);
+    current.setDate(current.getDate() + 1);
+  }
+
+  return days;
+}
+
+// =========================
 // 🚀 MAIN
 // =========================
 async function main() {
@@ -79,101 +94,75 @@ async function main() {
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
 
-  const yesterdayStr = yesterday.toISOString().split("T")[0];
+  const startDate = new Date("2026-03-01"); // 🔥 FIJO (el más antiguo)
 
-  // =========================
-  // 📦 TRAER CONTRATOS ACTIVOS
-  // =========================
-  const { data: contratos } = await supabase
-    .from("contratos_servicios")
-    .select("*");
+  const days = generateDays(startDate, yesterday);
 
-  const contratosActivos = contratos.filter((c) => {
-    const ini = new Date(c.fecha_inicio);
-    const fin = new Date(c.fecha_termino);
-    const y = new Date(yesterdayStr);
+  for (const day of days) {
+    for (const page of pages) {
+      const fbPageId = page.id_page;
+      const dbPageId = page.id;
+      const token = page.token;
 
-    return ini <= y && fin >= y;
-  });
+      if (!fbPageId || !token) continue;
 
-  for (const page of pages) {
-    const fbPageId = page.id_page;
-    const dbPageId = page.id;
-    const token = page.token;
+      // =========================
+      // 🔍 EVITAR DUPLICADOS
+      // =========================
+      const { data: exists } = await supabase
+        .from("reporte_diario")
+        .select("id_record")
+        .eq("pagina", dbPageId)
+        .eq("fecha", day)
+        .maybeSingle();
 
-    if (!fbPageId || !token) continue;
+      if (exists) continue;
 
-    // =========================
-    // 🔍 VALIDAR CONTRATO ACTIVO
-    // =========================
-    const tieneContrato = contratosActivos.some(
-      (c) => c.id_cliente === page.id_cliente
-    );
+      // =========================
+      // 📊 METRICS DEL DÍA
+      // =========================
+      const impresiones = await getMetric(
+        fbPageId,
+        token,
+        "page_impressions_unique",
+        day,
+        day
+      );
 
-    if (!tieneContrato) {
-      console.log(`⏭️ SIN CONTRATO ${dbPageId}`);
-      continue;
+      const reactions = await getMetric(
+        fbPageId,
+        token,
+        "page_actions_post_reactions_like_total",
+        day,
+        day
+      );
+
+      const engagement = await getMetric(
+        fbPageId,
+        token,
+        "page_post_engagements",
+        day,
+        day
+      );
+
+      const share = await getTotalShares(fbPageId, token);
+
+      // =========================
+      // 💾 INSERT
+      // =========================
+      await supabase.from("reporte_diario").insert({
+        pagina: dbPageId,
+        impresiones,
+        reaction: reactions,
+        engagement,
+        share,
+        engagement_real: engagement,
+        fecha: day,
+        created_at: new Date().toISOString(),
+      });
+
+      console.log(`✅ ${dbPageId} → ${day}`);
     }
-
-    // =========================
-    // 🔍 EVITAR DUPLICADOS
-    // =========================
-    const { data: exists } = await supabase
-      .from("reporte_diario")
-      .select("id_record")
-      .eq("pagina", dbPageId)
-      .eq("fecha", yesterdayStr)
-      .maybeSingle();
-
-    if (exists) {
-      console.log(`⏭️ YA EXISTE ${dbPageId}`);
-      continue;
-    }
-
-    // =========================
-    // 📊 DATOS SOLO AYER
-    // =========================
-    const impresiones = await getMetric(
-      fbPageId,
-      token,
-      "page_impressions_unique",
-      yesterdayStr,
-      yesterdayStr
-    );
-
-    const reactions = await getMetric(
-      fbPageId,
-      token,
-      "page_actions_post_reactions_like_total",
-      yesterdayStr,
-      yesterdayStr
-    );
-
-    const engagement = await getMetric(
-      fbPageId,
-      token,
-      "page_post_engagements",
-      yesterdayStr,
-      yesterdayStr
-    );
-
-    const share = await getTotalShares(fbPageId, token);
-
-    // =========================
-    // 💾 INSERT
-    // =========================
-    await supabase.from("reporte_diario").insert({
-      pagina: dbPageId,
-      impresiones,
-      reaction: reactions,
-      engagement,
-      share,
-      engagement_real: engagement,
-      fecha: yesterdayStr,
-      created_at: new Date().toISOString(),
-    });
-
-    console.log(`✅ INSERT ${dbPageId}`);
   }
 }
 
