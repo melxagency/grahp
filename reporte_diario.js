@@ -35,7 +35,6 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// ✅ Reintento automático con delay exponencial
 async function getMetric(pageId, token, metric, since, until, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -55,10 +54,9 @@ async function getMetric(pageId, token, metric, since, until, retries = 3) {
     } catch (err) {
       const isTransient = err.response?.data?.error?.is_transient;
       const msg = err.response?.data?.error?.message || err.message;
-
       if (isTransient && attempt < retries) {
-        const wait = attempt * 3000; // 3s, 6s, 9s
-        console.log(`⏳ Transient error en ${metric}, reintento ${attempt}/${retries} en ${wait/1000}s...`);
+        const wait = attempt * 3000;
+        console.log(`⏳ Transient error en ${metric}, reintento ${attempt}/${retries} en ${wait / 1000}s...`);
         await sleep(wait);
       } else {
         console.log(`❌ METRIC ERROR ${metric}:`, msg);
@@ -69,22 +67,43 @@ async function getMetric(pageId, token, metric, since, until, retries = 3) {
   return 0;
 }
 
-async function getReactions(pageId, token, since, until) {
-  const tipos = [
-    "page_actions_post_reactions_like_total",
-    "page_actions_post_reactions_love_total",
-    "page_actions_post_reactions_wow_total",
-    "page_actions_post_reactions_haha_total",
-    "page_actions_post_reactions_sorry_total",
-    "page_actions_post_reactions_anger_total",
-  ];
-
-  let total = 0;
-  for (const metric of tipos) {
-    total += await getMetric(pageId, token, metric, since, until);
-    await sleep(300); // ✅ pausa entre cada métrica
+// ✅ Una sola llamada para todas las reacciones
+async function getReactions(pageId, token, since, until, retries = 3) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await axios.get(
+        `https://graph.facebook.com/v21.0/${pageId}/insights`,
+        {
+          params: {
+            metric: "page_actions_post_reactions_total",
+            period: "day",
+            since,
+            until,
+            access_token: token,
+          },
+        }
+      );
+      const values = res.data.data?.[0]?.values || [];
+      return values.reduce((sum, v) => {
+        if (typeof v.value === "object" && v.value !== null) {
+          return sum + Object.values(v.value).reduce((s, n) => s + (Number(n) || 0), 0);
+        }
+        return sum + (Number(v.value) || 0);
+      }, 0);
+    } catch (err) {
+      const isTransient = err.response?.data?.error?.is_transient;
+      const msg = err.response?.data?.error?.message || err.message;
+      if (isTransient && attempt < retries) {
+        const wait = attempt * 3000;
+        console.log(`⏳ Transient error en reactions, reintento ${attempt}/${retries} en ${wait / 1000}s...`);
+        await sleep(wait);
+      } else {
+        console.log(`❌ REACTIONS ERROR:`, msg);
+        return 0;
+      }
+    }
   }
-  return total;
+  return 0;
 }
 
 async function getShares(pageId, token, since, until) {
@@ -108,7 +127,7 @@ async function getShares(pageId, token, since, until) {
       url = res.data.paging?.next || null;
     }
   } catch (err) {
-    console.log("❌ SHARE ERROR:", err.response?.data || err.message);
+    console.log("❌ SHARE ERROR:", err.response?.data?.error?.message || err.message);
   }
   return total;
 }
@@ -167,7 +186,7 @@ async function main() {
       const share = await getShares(fbId, token, day, until);
       await sleep(300);
       const engagement = await getMetric(fbId, token, "page_post_engagements", day, until);
-      await sleep(500); // ✅ pausa entre páginas
+      await sleep(500);
 
       console.log(`📈 ${dbId} → ${day}`, { impresiones, reactions, share, engagement });
 
