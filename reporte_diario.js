@@ -67,7 +67,6 @@ async function getMetric(pageId, token, metric, since, until, retries = 3) {
   return 0;
 }
 
-// ✅ Una sola llamada para todas las reacciones
 async function getReactions(pageId, token, since, until, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -152,32 +151,38 @@ async function main() {
 
   const startDate = contratos[0].fecha_inicio.split("T")[0];
   const yesterday = getYesterdayCuba();
-  const days = generateDays(startDate, yesterday);
+  const allDays = generateDays(startDate, yesterday);
 
-  console.log(`📅 Desde: ${startDate} → Hasta: ${yesterday} (${days.length} días)`);
+  console.log(`📅 Rango total: ${startDate} → ${yesterday} (${allDays.length} días)`);
   console.log(`📄 Páginas: ${pages.length}`);
 
-  for (const day of days) {
-    const until = nextDay(day);
+  for (const page of pages) {
+    const fbId = page.id_page;
+    const dbId = page.id;
+    const token = page.token;
 
-    for (const page of pages) {
-      const fbId = page.id_page;
-      const dbId = page.id;
-      const token = page.token;
+    if (!fbId || !token) continue;
 
-      if (!fbId || !token) continue;
+    // ✅ Obtener todas las fechas ya registradas para esta página de una sola vez
+    const { data: registros } = await supabase
+      .from("reporte_diario")
+      .select("fecha")
+      .eq("pagina", dbId);
 
-      const { data: exists } = await supabase
-        .from("reporte_diario")
-        .select("id_record")
-        .eq("pagina", dbId)
-        .eq("fecha", day)
-        .maybeSingle();
+    const fechasRegistradas = new Set((registros || []).map((r) => r.fecha));
 
-      if (exists) {
-        console.log(`⏭️  ${dbId} → ${day} ya existe`);
-        continue;
-      }
+    // ✅ Filtrar solo los días que faltan
+    const diasFaltantes = allDays.filter((d) => !fechasRegistradas.has(d));
+
+    if (!diasFaltantes.length) {
+      console.log(`✅ Página ${dbId} completa, sin días faltantes`);
+      continue;
+    }
+
+    console.log(`📊 Página ${dbId}: ${diasFaltantes.length} días faltantes`);
+
+    for (const day of diasFaltantes) {
+      const until = nextDay(day);
 
       const impresiones = await getMetric(fbId, token, "page_impressions_unique", day, until);
       await sleep(300);
