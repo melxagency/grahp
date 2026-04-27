@@ -31,25 +31,42 @@ function generateDays(start, end) {
   return days;
 }
 
-async function getMetric(pageId, token, metric, since, until) {
-  try {
-    const res = await axios.get(
-      `https://graph.facebook.com/v21.0/${pageId}/insights`,
-      {
-        params: { metric, period: "day", since, until, access_token: token },
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ✅ Reintento automático con delay exponencial
+async function getMetric(pageId, token, metric, since, until, retries = 3) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await axios.get(
+        `https://graph.facebook.com/v21.0/${pageId}/insights`,
+        {
+          params: { metric, period: "day", since, until, access_token: token },
+        }
+      );
+      const values = res.data.data?.[0]?.values || [];
+      return values.reduce((sum, v) => {
+        if (typeof v.value === "object" && v.value !== null) {
+          return sum + Object.values(v.value).reduce((s, n) => s + (Number(n) || 0), 0);
+        }
+        return sum + (Number(v.value) || 0);
+      }, 0);
+    } catch (err) {
+      const isTransient = err.response?.data?.error?.is_transient;
+      const msg = err.response?.data?.error?.message || err.message;
+
+      if (isTransient && attempt < retries) {
+        const wait = attempt * 3000; // 3s, 6s, 9s
+        console.log(`⏳ Transient error en ${metric}, reintento ${attempt}/${retries} en ${wait/1000}s...`);
+        await sleep(wait);
+      } else {
+        console.log(`❌ METRIC ERROR ${metric}:`, msg);
+        return 0;
       }
-    );
-    const values = res.data.data?.[0]?.values || [];
-    return values.reduce((sum, v) => {
-      if (typeof v.value === "object" && v.value !== null) {
-        return sum + Object.values(v.value).reduce((s, n) => s + (Number(n) || 0), 0);
-      }
-      return sum + (Number(v.value) || 0);
-    }, 0);
-  } catch (err) {
-    console.log(`❌ METRIC ERROR ${metric}:`, err.response?.data || err.message);
-    return 0;
+    }
   }
+  return 0;
 }
 
 async function getReactions(pageId, token, since, until) {
@@ -65,6 +82,7 @@ async function getReactions(pageId, token, since, until) {
   let total = 0;
   for (const metric of tipos) {
     total += await getMetric(pageId, token, metric, since, until);
+    await sleep(300); // ✅ pausa entre cada métrica
   }
   return total;
 }
@@ -96,14 +114,12 @@ async function getShares(pageId, token, since, until) {
 }
 
 async function main() {
-  // ✅ Cargar páginas
   const { data: pages, error: pagesError } = await supabase.from("pages").select("*");
   if (pagesError || !pages?.length) {
     console.log("❌ Error cargando páginas:", pagesError);
     return;
   }
 
-  // ✅ Buscar la fecha_inicio más lejana en contratos_servicios
   const { data: contratos, error: contratosError } = await supabase
     .from("contratos_servicios")
     .select("fecha_inicio")
@@ -132,7 +148,6 @@ async function main() {
 
       if (!fbId || !token) continue;
 
-      // ✅ Solo insertar si no existe, nunca sobreescribir histórico
       const { data: exists } = await supabase
         .from("reporte_diario")
         .select("id_record")
@@ -145,12 +160,14 @@ async function main() {
         continue;
       }
 
-      const [impresiones, reactions, share, engagement] = await Promise.all([
-        getMetric(fbId, token, "page_impressions_unique", day, until),
-        getReactions(fbId, token, day, until),
-        getShares(fbId, token, day, until),
-        getMetric(fbId, token, "page_post_engagements", day, until),
-      ]);
+      const impresiones = await getMetric(fbId, token, "page_impressions_unique", day, until);
+      await sleep(300);
+      const reactions = await getReactions(fbId, token, day, until);
+      await sleep(300);
+      const share = await getShares(fbId, token, day, until);
+      await sleep(300);
+      const engagement = await getMetric(fbId, token, "page_post_engagements", day, until);
+      await sleep(500); // ✅ pausa entre páginas
 
       console.log(`📈 ${dbId} → ${day}`, { impresiones, reactions, share, engagement });
 
