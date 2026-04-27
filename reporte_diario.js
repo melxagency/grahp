@@ -20,6 +20,17 @@ function nextDay(dateStr) {
   return d.toISOString().split("T")[0];
 }
 
+function generateDays(start, end) {
+  const days = [];
+  const current = new Date(start + "T00:00:00Z");
+  const last = new Date(end + "T00:00:00Z");
+  while (current <= last) {
+    days.push(current.toISOString().split("T")[0]);
+    current.setUTCDate(current.getUTCDate() + 1);
+  }
+  return days;
+}
+
 async function getMetric(pageId, token, metric, since, until) {
   try {
     const res = await axios.get(
@@ -85,33 +96,65 @@ async function getShares(pageId, token, since, until) {
 }
 
 async function main() {
-  const { data: pages } = await supabase.from("pages").select("*");
+  // ✅ Cargar páginas
+  const { data: pages, error: pagesError } = await supabase.from("pages").select("*");
+  if (pagesError || !pages?.length) {
+    console.log("❌ Error cargando páginas:", pagesError);
+    return;
+  }
 
-  const day = getYesterdayCuba();
-  const until = nextDay(day);
+  // ✅ Buscar la fecha_inicio más lejana en contratos_servicios
+  const { data: contratos, error: contratosError } = await supabase
+    .from("contratos_servicios")
+    .select("fecha_inicio")
+    .order("fecha_inicio", { ascending: true })
+    .limit(1);
 
-  console.log(`📅 Procesando día: ${day} (until: ${until})`);
+  if (contratosError || !contratos?.length) {
+    console.log("❌ Error cargando contratos:", contratosError);
+    return;
+  }
 
-  for (const page of pages) {
-    const fbId = page.id_page;
-    const dbId = page.id;
-    const token = page.token;
+  const startDate = contratos[0].fecha_inicio.split("T")[0];
+  const yesterday = getYesterdayCuba();
+  const days = generateDays(startDate, yesterday);
 
-    if (!fbId || !token) continue;
+  console.log(`📅 Desde: ${startDate} → Hasta: ${yesterday} (${days.length} días)`);
+  console.log(`📄 Páginas: ${pages.length}`);
 
-    console.log(`📊 Página ${dbId}`);
+  for (const day of days) {
+    const until = nextDay(day);
 
-    const [impresiones, reactions, share, engagement] = await Promise.all([
-      getMetric(fbId, token, "page_impressions_unique", day, until),
-      getReactions(fbId, token, day, until),
-      getShares(fbId, token, day, until),
-      getMetric(fbId, token, "page_post_engagements", day, until),
-    ]);
+    for (const page of pages) {
+      const fbId = page.id_page;
+      const dbId = page.id;
+      const token = page.token;
 
-    console.log("📈", { impresiones, reactions, share, engagement });
+      if (!fbId || !token) continue;
 
-    const { error } = await supabase.from("reporte_diario").upsert(
-      {
+      // ✅ Solo insertar si no existe, nunca sobreescribir histórico
+      const { data: exists } = await supabase
+        .from("reporte_diario")
+        .select("id_record")
+        .eq("pagina", dbId)
+        .eq("fecha", day)
+        .maybeSingle();
+
+      if (exists) {
+        console.log(`⏭️  ${dbId} → ${day} ya existe`);
+        continue;
+      }
+
+      const [impresiones, reactions, share, engagement] = await Promise.all([
+        getMetric(fbId, token, "page_impressions_unique", day, until),
+        getReactions(fbId, token, day, until),
+        getShares(fbId, token, day, until),
+        getMetric(fbId, token, "page_post_engagements", day, until),
+      ]);
+
+      console.log(`📈 ${dbId} → ${day}`, { impresiones, reactions, share, engagement });
+
+      const { error } = await supabase.from("reporte_diario").insert({
         pagina: dbId,
         impresiones,
         reaction: reactions,
@@ -119,14 +162,13 @@ async function main() {
         engagement,
         fecha: day,
         created_at: new Date().toISOString(),
-      },
-      { onConflict: "pagina,fecha" }
-    );
+      });
 
-    if (error) {
-      console.log("❌ UPSERT ERROR:", error);
-    } else {
-      console.log(`✅ OK ${dbId} → ${day}`);
+      if (error) {
+        console.log(`❌ INSERT ERROR ${dbId} → ${day}:`, error.message);
+      } else {
+        console.log(`✅ OK ${dbId} → ${day}`);
+      }
     }
   }
 
