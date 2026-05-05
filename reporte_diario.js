@@ -1,13 +1,13 @@
 const axios = require("axios");
 const { createClient } = require("@supabase/supabase-js");
-const ws = require("ws"); 
+const ws = require("ws");
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_KEY
-{
+  process.env.SUPABASE_KEY,
+  {
     realtime: {
-      transport: ws,  // ✅ AGREGAR ESTO
+      transport: ws,
     },
   }
 );
@@ -169,15 +169,12 @@ async function main() {
 
     if (!fbId || !token) continue;
 
-    // ✅ Obtener todas las fechas ya registradas para esta página de una sola vez
     const { data: registros } = await supabase
       .from("reporte_diario")
       .select("fecha")
       .eq("pagina", dbId);
 
     const fechasRegistradas = new Set((registros || []).map((r) => r.fecha));
-
-    // ✅ Filtrar solo los días que faltan
     const diasFaltantes = allDays.filter((d) => !fechasRegistradas.has(d));
 
     if (!diasFaltantes.length) {
