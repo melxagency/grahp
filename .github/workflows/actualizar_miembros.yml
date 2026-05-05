@@ -1,4 +1,4 @@
-name: Miembros Inicio Mes
+name: Actualizar Miembros Actuales
 
 on:
   workflow_dispatch:
@@ -90,7 +90,7 @@ jobs:
             RESULT=$(echo "$RESULT" | jq \
               --argjson id "$GROUP_ID" \
               --argjson count "$COUNT" \
-              '. + [{"id_group": $id, "miembros_inicio_mes": $count}]')
+              '. + [{"id_group": $id, "miembros_actuales": $count}]')
           done
 
           echo "$RESULT" > update_payload.json
@@ -101,12 +101,12 @@ jobs:
       # =========================
       # 5. UPDATE SUPABASE
       # =========================
-      - name: Update Supabase (inicio del día)
+      - name: Update Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          echo "🚀 Updating inicio del día..."
+          echo "🚀 Updating miembros_actuales..."
 
           if [ ! -s update_payload.json ]; then
             echo "❌ ERROR: payload vacío"
@@ -116,7 +116,7 @@ jobs:
           for row in $(jq -c '.[]' update_payload.json); do
 
             GROUP_ID=$(echo "$row" | jq -r '.id_group')
-            COUNT=$(echo "$row" | jq -r '.miembros_inicio_mes')
+            COUNT=$(echo "$row" | jq -r '.miembros_actuales')
 
             echo "📦 Updating $GROUP_ID → $COUNT"
 
@@ -126,7 +126,7 @@ jobs:
               -H "Authorization: Bearer ${SUPABASE_KEY}" \
               -H "Content-Type: application/json" \
               -H "Prefer: return=representation" \
-              -d "{\"miembros_inicio_mes\": ${COUNT}}")
+              -d "{\"miembros_actuales\": ${COUNT}}")
 
             echo "$RESPONSE"
 
