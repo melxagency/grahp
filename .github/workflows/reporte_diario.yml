@@ -21,15 +21,7 @@ jobs:
 
 
       - name: Install dependencies
-        run: npm install ws axios       @supabase/supabase-js
-
-      - name: Run reporte diario
-        run: node reporte_diario.js
-        env:
-        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-        SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-         PAGE_TOKEN: ${{ secrets.PAGE_TOKEN }}
-
+        run: npm install ws axios      
 
 
       - name: Install dependencies
