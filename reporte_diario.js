@@ -45,7 +45,7 @@ async function getMetric(pageId, token, metric, since, until, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const res = await axios.get(
-        `https://graph.facebook.com/v21.0/${pageId}/insights`,
+        `https://graph.facebook.com/v19.0/${pageId}/insights`,
         {
           params: { metric, period: "day", since, until, access_token: token },
         }
@@ -77,7 +77,7 @@ async function getReactions(pageId, token, since, until, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const res = await axios.get(
-        `https://graph.facebook.com/v21.0/${pageId}/insights`,
+        `https://graph.facebook.com/v19.0/${pageId}/insights`,
         {
           params: {
             metric: "page_actions_post_reactions_total",
@@ -112,7 +112,7 @@ async function getReactions(pageId, token, since, until, retries = 3) {
 }
 
 async function getShares(pageId, token, since, until) {
-  let url = `https://graph.facebook.com/v21.0/${pageId}/posts`;
+  let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
   let total = 0;
   try {
     while (url) {
