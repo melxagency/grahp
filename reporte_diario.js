@@ -187,9 +187,7 @@ async function main() {
     for (const day of diasFaltantes) {
       const until = nextDay(day);
 
-      const impresiones = await getMetric(fbId, token, "page_impressions", day, until);
-      await sleep(300);
-      const impresiones_unicas = await getMetric(fbId, token, "page_impressions_unique", day, until);
+      const impresiones = await getMetric(fbId, token, "page_views_total", day, until);
       await sleep(300);
       const reactions = await getReactions(fbId, token, day, until);
       await sleep(300);
@@ -198,12 +196,11 @@ async function main() {
       const engagement = await getMetric(fbId, token, "page_post_engagements", day, until);
       await sleep(500);
 
-      console.log(`📈 ${dbId} → ${day}`, { impresiones, impresiones_unicas, reactions, share, engagement });
+      console.log(`📈 ${dbId} → ${day}`, { impresiones, reactions, share, engagement });
 
       const { error } = await supabase.from("reporte_diario").insert({
         pagina: dbId,
         impresiones,
-        impresiones_unicas,
         reaction: reactions,
         share,
         engagement,
