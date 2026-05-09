@@ -54,13 +54,13 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function getMetric(pageId, token, metric, since, until, retries = 3) {
+async function getMetric(pageId, token, metric, since, until, period = "day", retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const res = await axios.get(
         `https://graph.facebook.com/v19.0/${pageId}/insights`,
         {
-          params: { metric, period: "day", since, until, access_token: token },
+          params: { metric, period, since, until, access_token: token },
         }
       );
       const values = res.data.data?.[0]?.values || [];
@@ -79,6 +79,38 @@ async function getMetric(pageId, token, metric, since, until, retries = 3) {
         await sleep(wait);
       } else {
         console.log(`❌ METRIC ERROR ${metric}:`, msg);
+        return 0;
+      }
+    }
+  }
+  return 0;
+}
+
+// ✅ Obtiene el valor de days_28 para un día específico
+async function getDays28(pageId, token, day, retries = 3) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await axios.get(
+        `https://graph.facebook.com/v19.0/${pageId}/insights`,
+        {
+          params: {
+            metric: "page_impressions_unique",
+            period: "days_28",
+            since: day,
+            until: nextDay(day),
+            access_token: token,
+          },
+        }
+      );
+      const values = res.data.data?.[0]?.values || [];
+      return values[0]?.value || 0;
+    } catch (err) {
+      const isTransient = err.response?.data?.error?.is_transient;
+      const msg = err.response?.data?.error?.message || err.message;
+      if (isTransient && attempt < retries) {
+        await sleep(attempt * 3000);
+      } else {
+        console.log(`❌ DAYS28 ERROR:`, msg);
         return 0;
       }
     }
@@ -195,11 +227,10 @@ async function main() {
 
     console.log(`📊 Página ${dbId}: ${diasFaltantes.length} días faltantes`);
 
-    // ✅ Obtener shares acumulados actuales
+    // ✅ Shares acumulados
     const sharesAcumuladosHoy = await getTotalSharesAcumulado(fbId, token);
     await sleep(500);
 
-    // ✅ Guardar acumulado con fecha de HOY (día de ejecución)
     const { data: acumuladoHoyExiste } = await supabase
       .from("acumulado_share_diarios")
       .select("id")
@@ -219,6 +250,10 @@ async function main() {
     for (const day of diasFaltantes) {
       const until = nextDay(day);
       const dayPrev = prevDay(day);
+      const dayMinus29 = generateDays(day, day).length > 0
+        ? (() => { const d = new Date(day + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - 27); return d.toISOString().split("T")[0]; })()
+        : day;
+      const dayMinus30 = (() => { const d = new Date(day + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - 28); return d.toISOString().split("T")[0]; })();
 
       const impresiones = await getMetric(fbId, token, "page_impressions_unique", day, until);
       await sleep(300);
@@ -229,7 +264,29 @@ async function main() {
       const engagement = await getMetric(fbId, token, "page_post_engagements", day, until);
       await sleep(300);
 
-      // ✅ Calcular shares del día = acumulado día - acumulado día anterior
+      // ✅ days_28 del día actual y día anterior
+      const days28Hoy = await getDays28(fbId, token, day);
+      await sleep(300);
+      const days28Ayer = await getDays28(fbId, token, dayPrev);
+      await sleep(300);
+
+      // ✅ unique del primer día de la ventana (day-27) y el día anterior (day-28)
+      const uniquePrimerDia = await getMetric(fbId, token, "page_impressions_unique", dayMinus29, nextDay(dayMinus29));
+      await sleep(300);
+      const uniqueDiaAntesPrimerDia = await getMetric(fbId, token, "page_impressions_unique", dayMinus30, nextDay(dayMinus30));
+      await sleep(300);
+
+      // ✅ Suma total days_28 para impresiones_days_28
+      const impresiones_days_28 = days28Hoy;
+
+      // ✅ Estimado = (days28_hoy - days28_ayer) - (unique_primer_dia - unique_dia_antes) + (unique_hoy - unique_ayer)
+      const diffDays28 = days28Hoy - days28Ayer;
+      const diffPrimerDia = uniquePrimerDia - uniqueDiaAntesPrimerDia;
+      const diffUltimoDia = impresiones - (await getMetric(fbId, token, "page_impressions_unique", dayPrev, day));
+      const estimado_impresiones_unicas_acumuladas = Math.max(0, diffDays28 - diffPrimerDia + diffUltimoDia);
+      await sleep(300);
+
+      // ✅ Shares del día
       const { data: acumuladoDia } = await supabase
         .from("acumulado_share_diarios")
         .select("share")
@@ -249,9 +306,17 @@ async function main() {
         share = Math.max(0, acumuladoDia.share - acumuladoDiaAnterior.share);
       }
 
-      await sleep(500);
+      await sleep(300);
 
-      console.log(`📈 ${dbId} → ${day}`, { impresiones, vistas_perfil, reactions, share, engagement });
+      console.log(`📈 ${dbId} → ${day}`, {
+        impresiones,
+        vistas_perfil,
+        reactions,
+        share,
+        engagement,
+        impresiones_days_28,
+        estimado_impresiones_unicas_acumuladas,
+      });
 
       const { error } = await supabase.from("reporte_diario").insert({
         pagina: dbId,
@@ -260,6 +325,8 @@ async function main() {
         reaction: reactions,
         share,
         engagement,
+        impresiones_days_28,
+        estimado_impresiones_unicas_acumuladas,
         fecha: day,
         created_at: new Date().toISOString(),
       });
