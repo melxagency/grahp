@@ -12,6 +12,13 @@ const supabase = createClient(
   }
 );
 
+function getTodayCuba() {
+  const now = new Date();
+  const cubaOffset = -5 * 60 * 60 * 1000;
+  const cuba = new Date(now.getTime() + cubaOffset);
+  return cuba.toISOString().split("T")[0];
+}
+
 function getYesterdayCuba() {
   const now = new Date();
   const cubaOffset = -5 * 60 * 60 * 1000;
@@ -117,7 +124,6 @@ async function getReactions(pageId, token, since, until, retries = 3) {
   return 0;
 }
 
-// ✅ Obtiene el total acumulado de shares de TODOS los posts de la página
 async function getTotalSharesAcumulado(pageId, token) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
   let total = 0;
@@ -161,6 +167,7 @@ async function main() {
 
   const startDate = contratos[0].fecha_inicio.split("T")[0];
   const yesterday = getYesterdayCuba();
+  const hoy = getTodayCuba();
   const allDays = generateDays(startDate, yesterday);
 
   console.log(`📅 Rango total: ${startDate} → ${yesterday} (${allDays.length} días)`);
@@ -188,12 +195,11 @@ async function main() {
 
     console.log(`📊 Página ${dbId}: ${diasFaltantes.length} días faltantes`);
 
-    // ✅ Obtener shares acumulados actuales una sola vez por página
+    // ✅ Obtener shares acumulados actuales
     const sharesAcumuladosHoy = await getTotalSharesAcumulado(fbId, token);
     await sleep(500);
 
-    // ✅ Guardar en acumulado_share_diarios si no existe para hoy
-    const hoy = yesterday; // el script corre hoy y registra hasta ayer
+    // ✅ Guardar acumulado con fecha de HOY (día de ejecución)
     const { data: acumuladoHoyExiste } = await supabase
       .from("acumulado_share_diarios")
       .select("id")
@@ -223,15 +229,15 @@ async function main() {
       const engagement = await getMetric(fbId, token, "page_post_engagements", day, until);
       await sleep(300);
 
-      // ✅ Calcular shares del día = acumulado hoy - acumulado ayer
-      const { data: acumuladoHoy } = await supabase
+      // ✅ Calcular shares del día = acumulado día - acumulado día anterior
+      const { data: acumuladoDia } = await supabase
         .from("acumulado_share_diarios")
         .select("share")
         .eq("id_pagina", dbId)
         .eq("fecha", day)
         .maybeSingle();
 
-      const { data: acumuladoAyer } = await supabase
+      const { data: acumuladoDiaAnterior } = await supabase
         .from("acumulado_share_diarios")
         .select("share")
         .eq("id_pagina", dbId)
@@ -239,11 +245,8 @@ async function main() {
         .maybeSingle();
 
       let share = 0;
-      if (acumuladoHoy && acumuladoAyer) {
-        share = Math.max(0, acumuladoHoy.share - acumuladoAyer.share);
-      } else if (acumuladoHoy && !acumuladoAyer) {
-        // ✅ Si no hay registro del día anterior, share del día = 0 (no podemos calcular diferencia)
-        share = 0;
+      if (acumuladoDia && acumuladoDiaAnterior) {
+        share = Math.max(0, acumuladoDia.share - acumuladoDiaAnterior.share);
       }
 
       await sleep(500);
