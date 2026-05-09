@@ -26,6 +26,12 @@ function nextDay(dateStr) {
   return d.toISOString().split("T")[0];
 }
 
+function prevDay(dateStr) {
+  const d = new Date(dateStr + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().split("T")[0];
+}
+
 function generateDays(start, end) {
   const days = [];
   const current = new Date(start + "T00:00:00Z");
@@ -111,28 +117,26 @@ async function getReactions(pageId, token, since, until, retries = 3) {
   return 0;
 }
 
-async function getShares(pageId, token, since, until) {
+// ✅ Obtiene el total acumulado de shares de TODOS los posts de la página
+async function getTotalSharesAcumulado(pageId, token) {
   let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
   let total = 0;
   try {
     while (url) {
       const res = await axios.get(url, {
         params: {
-          fields: "shares,created_time",
+          fields: "shares",
           limit: 100,
-          since,
-          until,
           access_token: token,
         },
       });
-      const posts = res.data.data || [];
-      for (const post of posts) {
+      for (const post of res.data?.data || []) {
         total += post.shares?.count || 0;
       }
-      url = res.data.paging?.next || null;
+      url = res.data?.paging?.next || null;
     }
   } catch (err) {
-    console.log("❌ SHARE ERROR:", err.response?.data?.error?.message || err.message);
+    console.log("❌ SHARE ACUMULADO ERROR:", err.response?.data?.error?.message || err.message);
   }
   return total;
 }
@@ -184,8 +188,31 @@ async function main() {
 
     console.log(`📊 Página ${dbId}: ${diasFaltantes.length} días faltantes`);
 
+    // ✅ Obtener shares acumulados actuales una sola vez por página
+    const sharesAcumuladosHoy = await getTotalSharesAcumulado(fbId, token);
+    await sleep(500);
+
+    // ✅ Guardar en acumulado_share_diarios si no existe para hoy
+    const hoy = yesterday; // el script corre hoy y registra hasta ayer
+    const { data: acumuladoHoyExiste } = await supabase
+      .from("acumulado_share_diarios")
+      .select("id")
+      .eq("id_pagina", dbId)
+      .eq("fecha", hoy)
+      .maybeSingle();
+
+    if (!acumuladoHoyExiste) {
+      await supabase.from("acumulado_share_diarios").insert({
+        id_pagina: dbId,
+        share: sharesAcumuladosHoy,
+        fecha: hoy,
+      });
+      console.log(`📦 Acumulado shares guardado: página ${dbId} → ${hoy}: ${sharesAcumuladosHoy}`);
+    }
+
     for (const day of diasFaltantes) {
       const until = nextDay(day);
+      const dayPrev = prevDay(day);
 
       const impresiones = await getMetric(fbId, token, "page_impressions_unique", day, until);
       await sleep(300);
@@ -193,9 +220,32 @@ async function main() {
       await sleep(300);
       const reactions = await getReactions(fbId, token, day, until);
       await sleep(300);
-      const share = await getShares(fbId, token, day, until);
-      await sleep(300);
       const engagement = await getMetric(fbId, token, "page_post_engagements", day, until);
+      await sleep(300);
+
+      // ✅ Calcular shares del día = acumulado hoy - acumulado ayer
+      const { data: acumuladoHoy } = await supabase
+        .from("acumulado_share_diarios")
+        .select("share")
+        .eq("id_pagina", dbId)
+        .eq("fecha", day)
+        .maybeSingle();
+
+      const { data: acumuladoAyer } = await supabase
+        .from("acumulado_share_diarios")
+        .select("share")
+        .eq("id_pagina", dbId)
+        .eq("fecha", dayPrev)
+        .maybeSingle();
+
+      let share = 0;
+      if (acumuladoHoy && acumuladoAyer) {
+        share = Math.max(0, acumuladoHoy.share - acumuladoAyer.share);
+      } else if (acumuladoHoy && !acumuladoAyer) {
+        // ✅ Si no hay registro del día anterior, share del día = 0 (no podemos calcular diferencia)
+        share = 0;
+      }
+
       await sleep(500);
 
       console.log(`📈 ${dbId} → ${day}`, { impresiones, vistas_perfil, reactions, share, engagement });
