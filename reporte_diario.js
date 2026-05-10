@@ -58,16 +58,13 @@ function sleep(ms) {
 
 async function getWindsorData(date) {
   try {
-    const res = await axios.get("https://connectors.windsor.ai/all", {
+    const url = `https://connectors.windsor.ai/all?api_key=${WINDSOR_API_KEY}&date_from=${date}&date_to=${date}&fields=date,page_id,page_impressions,page_impressions_unique`;
+    const res = await axios.get(url, {
       headers: {
         "User-Agent": "Mozilla/5.0",
         "Accept": "application/json",
-      },
-      params: {
-        api_key: WINDSOR_API_KEY,
-        date_from: date,
-        date_to: date,
-        fields: "date,page_id,page_impressions,page_impressions_unique",
+        "Referer": "https://app.windsor.ai",
+        "Origin": "https://app.windsor.ai",
       },
     });
     const map = {};
