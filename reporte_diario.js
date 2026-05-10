@@ -56,10 +56,13 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// ✅ Obtiene impresiones de Windsor para todas las páginas en un día
 async function getWindsorData(date) {
   try {
     const res = await axios.get("https://connectors.windsor.ai/all", {
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json",
+      },
       params: {
         api_key: WINDSOR_API_KEY,
         date_from: date,
@@ -67,7 +70,6 @@ async function getWindsorData(date) {
         fields: "page_id,page_impressions,page_impressions_unique,page_views_total",
       },
     });
-    // ✅ Convertir a mapa page_id → datos
     const map = {};
     for (const row of res.data?.data || []) {
       map[row.page_id] = {
@@ -233,6 +235,9 @@ async function main() {
   console.log(`📅 Rango total: ${startDate} → ${yesterday} (${allDays.length} días)`);
   console.log(`📄 Páginas: ${pages.length}`);
 
+  // ✅ Pre-cargar datos de Windsor para todos los días faltantes de una sola vez
+  const windsorCache = {};
+
   for (const page of pages) {
     const fbId = page.id_page;
     const dbId = page.id;
@@ -281,10 +286,12 @@ async function main() {
       const dayMinus29 = (() => { const d = new Date(day + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - 27); return d.toISOString().split("T")[0]; })();
       const dayMinus30 = (() => { const d = new Date(day + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - 28); return d.toISOString().split("T")[0]; })();
 
-      // ✅ Obtener impresiones desde Windsor
-      const windsorData = await getWindsorData(day);
-      await sleep(300);
-      const windsorPage = windsorData[fbId] || {};
+      // ✅ Windsor con cache por día
+      if (!windsorCache[day]) {
+        windsorCache[day] = await getWindsorData(day);
+        await sleep(300);
+      }
+      const windsorPage = windsorCache[day][fbId] || {};
       const impresiones = windsorPage.impresiones || 0;
       const impresiones_unicas = windsorPage.impresiones_unicas || 0;
       const vistas_perfil = windsorPage.vistas_perfil || 0;
@@ -294,7 +301,6 @@ async function main() {
       const engagement = await getMetric(fbId, token, "page_post_engagements", day, until);
       await sleep(300);
 
-      // ✅ days_28
       const days28Hoy = await getDays28(fbId, token, day);
       await sleep(300);
       const days28Ayer = await getDays28(fbId, token, dayPrev);
@@ -308,7 +314,8 @@ async function main() {
       const impresiones_days_28 = days28Hoy;
       const diffDays28 = days28Hoy - days28Ayer;
       const diffPrimerDia = uniquePrimerDia - uniqueDiaAntesPrimerDia;
-      const diffUltimoDia = impresiones_unicas - (await getMetric(fbId, token, "page_impressions_unique", dayPrev, day));
+      const uniqueAyer = await getMetric(fbId, token, "page_impressions_unique", dayPrev, day);
+      const diffUltimoDia = impresiones_unicas - uniqueAyer;
       const estimado_impresiones_unicas_acumuladas = Math.max(0, diffDays28 - diffPrimerDia + diffUltimoDia);
       await sleep(300);
 
