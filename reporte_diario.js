@@ -12,6 +12,8 @@ const supabase = createClient(
   }
 );
 
+const WINDSOR_API_KEY = process.env.WINDSOR_API_KEY;
+
 function getTodayCuba() {
   const now = new Date();
   const cubaOffset = -5 * 60 * 60 * 1000;
@@ -54,6 +56,33 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// ✅ Obtiene impresiones de Windsor para todas las páginas en un día
+async function getWindsorData(date) {
+  try {
+    const res = await axios.get("https://connectors.windsor.ai/all", {
+      params: {
+        api_key: WINDSOR_API_KEY,
+        date_from: date,
+        date_to: date,
+        fields: "page_id,page_impressions,page_impressions_unique,page_views_total",
+      },
+    });
+    // ✅ Convertir a mapa page_id → datos
+    const map = {};
+    for (const row of res.data?.data || []) {
+      map[row.page_id] = {
+        impresiones: row.page_impressions || 0,
+        impresiones_unicas: row.page_impressions_unique || 0,
+        vistas_perfil: row.page_views_total || 0,
+      };
+    }
+    return map;
+  } catch (err) {
+    console.log("❌ WINDSOR ERROR:", err.response?.data || err.message);
+    return {};
+  }
+}
+
 async function getMetric(pageId, token, metric, since, until, period = "day", retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -86,7 +115,6 @@ async function getMetric(pageId, token, metric, since, until, period = "day", re
   return 0;
 }
 
-// ✅ Obtiene el valor de days_28 para un día específico
 async function getDays28(pageId, token, day, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -250,39 +278,37 @@ async function main() {
     for (const day of diasFaltantes) {
       const until = nextDay(day);
       const dayPrev = prevDay(day);
-      const dayMinus29 = generateDays(day, day).length > 0
-        ? (() => { const d = new Date(day + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - 27); return d.toISOString().split("T")[0]; })()
-        : day;
+      const dayMinus29 = (() => { const d = new Date(day + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - 27); return d.toISOString().split("T")[0]; })();
       const dayMinus30 = (() => { const d = new Date(day + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - 28); return d.toISOString().split("T")[0]; })();
 
-      const impresiones = await getMetric(fbId, token, "page_impressions_unique", day, until);
+      // ✅ Obtener impresiones desde Windsor
+      const windsorData = await getWindsorData(day);
       await sleep(300);
-      const vistas_perfil = await getMetric(fbId, token, "page_views_total", day, until);
-      await sleep(300);
+      const windsorPage = windsorData[fbId] || {};
+      const impresiones = windsorPage.impresiones || 0;
+      const impresiones_unicas = windsorPage.impresiones_unicas || 0;
+      const vistas_perfil = windsorPage.vistas_perfil || 0;
+
       const reactions = await getReactions(fbId, token, day, until);
       await sleep(300);
       const engagement = await getMetric(fbId, token, "page_post_engagements", day, until);
       await sleep(300);
 
-      // ✅ days_28 del día actual y día anterior
+      // ✅ days_28
       const days28Hoy = await getDays28(fbId, token, day);
       await sleep(300);
       const days28Ayer = await getDays28(fbId, token, dayPrev);
       await sleep(300);
 
-      // ✅ unique del primer día de la ventana (day-27) y el día anterior (day-28)
       const uniquePrimerDia = await getMetric(fbId, token, "page_impressions_unique", dayMinus29, nextDay(dayMinus29));
       await sleep(300);
       const uniqueDiaAntesPrimerDia = await getMetric(fbId, token, "page_impressions_unique", dayMinus30, nextDay(dayMinus30));
       await sleep(300);
 
-      // ✅ Suma total days_28 para impresiones_days_28
       const impresiones_days_28 = days28Hoy;
-
-      // ✅ Estimado = (days28_hoy - days28_ayer) - (unique_primer_dia - unique_dia_antes) + (unique_hoy - unique_ayer)
       const diffDays28 = days28Hoy - days28Ayer;
       const diffPrimerDia = uniquePrimerDia - uniqueDiaAntesPrimerDia;
-      const diffUltimoDia = impresiones - (await getMetric(fbId, token, "page_impressions_unique", dayPrev, day));
+      const diffUltimoDia = impresiones_unicas - (await getMetric(fbId, token, "page_impressions_unique", dayPrev, day));
       const estimado_impresiones_unicas_acumuladas = Math.max(0, diffDays28 - diffPrimerDia + diffUltimoDia);
       await sleep(300);
 
@@ -310,6 +336,7 @@ async function main() {
 
       console.log(`📈 ${dbId} → ${day}`, {
         impresiones,
+        impresiones_unicas,
         vistas_perfil,
         reactions,
         share,
@@ -321,6 +348,7 @@ async function main() {
       const { error } = await supabase.from("reporte_diario").insert({
         pagina: dbId,
         impresiones,
+        impresiones_unicas,
         vistas_perfil,
         reaction: reactions,
         share,
