@@ -49,7 +49,7 @@ steps:
       TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
 
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
     run: |
       python update_members.py
 ```
