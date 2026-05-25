@@ -1,4 +1,4 @@
-name: Actualizar Miembros Telegram
+name: Miembros Telegram
 
 on:
 workflow_dispatch:
