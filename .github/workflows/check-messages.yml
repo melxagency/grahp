@@ -11,6 +11,6 @@ jobs:
       - name: Call Edge Function
         run: |
           curl -X POST \
-            "${{ secrets.SUPABASE_URL }}/functions/v1/check-messages" \
+            "${{ secrets.SUPABASE_URL }}/functions/v1/fcm_mensajes" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
             -H "Content-Type: application/json"
