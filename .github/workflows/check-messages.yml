@@ -1,0 +1,16 @@
+name: Check Facebook Messages
+on:
+  schedule:
+    - cron: '*/2 * * * *'  # Cada 2 minutos
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Edge Function
+        run: |
+          curl -X POST \
+            "${{ secrets.SUPABASE_URL }}/functions/v1/check-messages" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Content-Type: application/json"
