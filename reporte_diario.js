@@ -6,25 +6,18 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_KEY,
   {
-    realtime: {
-      transport: ws,
-    },
+    realtime: { transport: ws },
   }
 );
 
-const WINDSOR_API_KEY = process.env.WINDSOR_API_KEY;
-
 function getTodayCuba() {
   const now = new Date();
-  const cubaOffset = -5 * 60 * 60 * 1000;
-  const cuba = new Date(now.getTime() + cubaOffset);
-  return cuba.toISOString().split("T")[0];
+  return new Date(now.getTime() + (-5 * 60 * 60 * 1000)).toISOString().split("T")[0];
 }
 
 function getYesterdayCuba() {
   const now = new Date();
-  const cubaOffset = -5 * 60 * 60 * 1000;
-  const cuba = new Date(now.getTime() + cubaOffset);
+  const cuba = new Date(now.getTime() + (-5 * 60 * 60 * 1000));
   cuba.setDate(cuba.getDate() - 1);
   return cuba.toISOString().split("T")[0];
 }
@@ -56,46 +49,12 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function getWindsorData(date) {
-  try {
-    const url = `https://connectors.windsor.ai/all?api_key=${WINDSOR_API_KEY}&date_from=${date}&date_to=${date}&fields=date,page_id,page_impressions,page_impressions_unique`;
-    const res = await axios.get(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "application/json",
-        "Referer": "https://app.windsor.ai",
-        "Origin": "https://app.windsor.ai",
-      },
-    });
-
-    // 🔍 LOG TEMPORAL
-    console.log(`🔍 Windsor ${date} status:`, res.status);
-    console.log(`🔍 Windsor ${date} data:`, JSON.stringify(res.data).slice(0, 500));
-
-    const map = {};
-    for (const row of res.data?.data || []) {
-      map[row.page_id] = {
-        impresiones: row.page_impressions || 0,
-        impresiones_unicas: row.page_impressions_unique || 0,
-      };
-    }
-    return map;
-  } catch (err) {
-    console.log("❌ WINDSOR ERROR status:", err.response?.status);
-    console.log("❌ WINDSOR ERROR data:", JSON.stringify(err.response?.data));
-    console.log("❌ WINDSOR ERROR message:", err.message);
-    return {};
-  }
-}
-
 async function getMetric(pageId, token, metric, since, until, period = "day", retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const res = await axios.get(
-        `https://graph.facebook.com/v19.0/${pageId}/insights`,
-        {
-          params: { metric, period, since, until, access_token: token },
-        }
+        `https://graph.facebook.com/v21.0/${pageId}/insights`,
+        { params: { metric, period, since, until, access_token: token } }
       );
       const values = res.data.data?.[0]?.values || [];
       return values.reduce((sum, v) => {
@@ -108,9 +67,7 @@ async function getMetric(pageId, token, metric, since, until, period = "day", re
       const isTransient = err.response?.data?.error?.is_transient;
       const msg = err.response?.data?.error?.message || err.message;
       if (isTransient && attempt < retries) {
-        const wait = attempt * 3000;
-        console.log(`⏳ Transient error en ${metric}, reintento ${attempt}/${retries} en ${wait / 1000}s...`);
-        await sleep(wait);
+        await sleep(attempt * 3000);
       } else {
         console.log(`❌ METRIC ERROR ${metric}:`, msg);
         return 0;
@@ -124,7 +81,7 @@ async function getDays28(pageId, token, day, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const res = await axios.get(
-        `https://graph.facebook.com/v19.0/${pageId}/insights`,
+        `https://graph.facebook.com/v21.0/${pageId}/insights`,
         {
           params: {
             metric: "page_impressions_unique",
@@ -155,7 +112,7 @@ async function getReactions(pageId, token, since, until, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const res = await axios.get(
-        `https://graph.facebook.com/v19.0/${pageId}/insights`,
+        `https://graph.facebook.com/v21.0/${pageId}/insights`,
         {
           params: {
             metric: "page_actions_post_reactions_total",
@@ -177,9 +134,7 @@ async function getReactions(pageId, token, since, until, retries = 3) {
       const isTransient = err.response?.data?.error?.is_transient;
       const msg = err.response?.data?.error?.message || err.message;
       if (isTransient && attempt < retries) {
-        const wait = attempt * 3000;
-        console.log(`⏳ Transient error en reactions, reintento ${attempt}/${retries} en ${wait / 1000}s...`);
-        await sleep(wait);
+        await sleep(attempt * 3000);
       } else {
         console.log(`❌ REACTIONS ERROR:`, msg);
         return 0;
@@ -190,16 +145,12 @@ async function getReactions(pageId, token, since, until, retries = 3) {
 }
 
 async function getTotalSharesAcumulado(pageId, token) {
-  let url = `https://graph.facebook.com/v19.0/${pageId}/posts`;
+  let url = `https://graph.facebook.com/v21.0/${pageId}/posts`;
   let total = 0;
   try {
     while (url) {
       const res = await axios.get(url, {
-        params: {
-          fields: "shares",
-          limit: 100,
-          access_token: token,
-        },
+        params: { fields: "shares", limit: 100, access_token: token },
       });
       for (const post of res.data?.data || []) {
         total += post.shares?.count || 0;
@@ -237,8 +188,6 @@ async function main() {
 
   console.log(`📅 Rango total: ${startDate} → ${yesterday} (${allDays.length} días)`);
   console.log(`📄 Páginas: ${pages.length}`);
-
-  const windsorCache = {};
 
   for (const page of pages) {
     const fbId = page.id_page;
@@ -285,19 +234,24 @@ async function main() {
     for (const day of diasFaltantes) {
       const until = nextDay(day);
       const dayPrev = prevDay(day);
-      const dayMinus29 = (() => { const d = new Date(day + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - 27); return d.toISOString().split("T")[0]; })();
-      const dayMinus30 = (() => { const d = new Date(day + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - 28); return d.toISOString().split("T")[0]; })();
+      const dayMinus29 = (() => {
+        const d = new Date(day + "T00:00:00Z");
+        d.setUTCDate(d.getUTCDate() - 27);
+        return d.toISOString().split("T")[0];
+      })();
+      const dayMinus30 = (() => {
+        const d = new Date(day + "T00:00:00Z");
+        d.setUTCDate(d.getUTCDate() - 28);
+        return d.toISOString().split("T")[0];
+      })();
 
-      // ✅ Windsor con cache por día
-      if (!windsorCache[day]) {
-        windsorCache[day] = await getWindsorData(day);
-        await sleep(500);
-      }
-      const windsorPage = windsorCache[day][fbId] || {};
-      const impresiones = windsorPage.impresiones || 0;
-      const impresiones_unicas = windsorPage.impresiones_unicas || 0;
+      // ✅ Impresiones totales — nueva métrica page_media_view
+      const impresiones = await getMetric(fbId, token, "page_media_view", day, until);
+      await sleep(300);
 
-      console.log(`🔍 Windsor para página ${dbId} día ${day}: imp=${impresiones} imp_unicas=${impresiones_unicas}`);
+      // ✅ Impresiones únicas — sigue funcionando con period day
+      const impresiones_unicas = await getMetric(fbId, token, "page_impressions_unique", day, until);
+      await sleep(300);
 
       const vistas_perfil = await getMetric(fbId, token, "page_views_total", day, until);
       await sleep(300);
