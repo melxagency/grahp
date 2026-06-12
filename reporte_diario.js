@@ -67,6 +67,11 @@ async function getWindsorData(date) {
         "Origin": "https://app.windsor.ai",
       },
     });
+
+    // 🔍 LOG TEMPORAL
+    console.log(`🔍 Windsor ${date} status:`, res.status);
+    console.log(`🔍 Windsor ${date} data:`, JSON.stringify(res.data).slice(0, 500));
+
     const map = {};
     for (const row of res.data?.data || []) {
       map[row.page_id] = {
@@ -76,7 +81,9 @@ async function getWindsorData(date) {
     }
     return map;
   } catch (err) {
-    console.log("❌ WINDSOR ERROR:", err.response?.data || err.message);
+    console.log("❌ WINDSOR ERROR status:", err.response?.status);
+    console.log("❌ WINDSOR ERROR data:", JSON.stringify(err.response?.data));
+    console.log("❌ WINDSOR ERROR message:", err.message);
     return {};
   }
 }
@@ -284,11 +291,13 @@ async function main() {
       // ✅ Windsor con cache por día
       if (!windsorCache[day]) {
         windsorCache[day] = await getWindsorData(day);
-        await sleep(300);
+        await sleep(500);
       }
       const windsorPage = windsorCache[day][fbId] || {};
       const impresiones = windsorPage.impresiones || 0;
       const impresiones_unicas = windsorPage.impresiones_unicas || 0;
+
+      console.log(`🔍 Windsor para página ${dbId} día ${day}: imp=${impresiones} imp_unicas=${impresiones_unicas}`);
 
       const vistas_perfil = await getMetric(fbId, token, "page_views_total", day, until);
       await sleep(300);
