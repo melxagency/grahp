@@ -163,6 +163,63 @@ async function getTotalSharesAcumulado(pageId, token) {
   return total;
 }
 
+// ✅ Obtener acumulado total de impresiones de todos los posts
+async function getTotalImpresionesAcumulado(pageId, token) {
+  let url = `https://graph.facebook.com/v21.0/${pageId}/posts`;
+  let totalPosts = 0;
+  let totalImpresiones = 0;
+  let totalImpresionesUnicas = 0;
+
+  try {
+    // Obtener todos los posts
+    const posts = [];
+    while (url) {
+      const res = await axios.get(url, {
+        params: { fields: "id", limit: 100, access_token: token },
+      });
+      for (const post of res.data?.data || []) {
+        posts.push(post.id);
+      }
+      url = res.data?.paging?.next || null;
+    }
+
+    totalPosts = posts.length;
+    console.log(`📝 Total posts encontrados: ${totalPosts}`);
+
+    // Obtener impresiones de cada post
+    for (const postId of posts) {
+      try {
+        const res = await axios.get(
+          `https://graph.facebook.com/v21.0/${postId}/insights`,
+          {
+            params: {
+              metric: "post_media_view,post_impressions_unique",
+              access_token: token,
+            },
+          }
+        );
+
+        for (const metric of res.data?.data || []) {
+          const value = metric.values?.[0]?.value || 0;
+          if (metric.name === "post_media_view") {
+            totalImpresiones += Number(value) || 0;
+          }
+          if (metric.name === "post_impressions_unique") {
+            totalImpresionesUnicas += Number(value) || 0;
+          }
+        }
+        await sleep(100);
+      } catch {
+        // silencioso por post individual
+      }
+    }
+  } catch (err) {
+    console.log("❌ IMPRESIONES ACUMULADO ERROR:", err.response?.data?.error?.message || err.message);
+  }
+
+  return { totalPosts, totalImpresiones, totalImpresionesUnicas };
+}
+
 async function main() {
   const { data: pages, error: pagesError } = await supabase.from("pages").select("*");
   if (pagesError || !pages?.length) {
@@ -197,7 +254,7 @@ async function main() {
     if (!fbId || !token) continue;
 
     const { data: registros } = await supabase
-      .from("reporte_diario")
+      .from("insights_reporte_diario")
       .select("fecha")
       .eq("pagina", dbId);
 
@@ -211,24 +268,47 @@ async function main() {
 
     console.log(`📊 Página ${dbId}: ${diasFaltantes.length} días faltantes`);
 
-    // ✅ Shares acumulados
+    // ✅ Shares acumulados de hoy
     const sharesAcumuladosHoy = await getTotalSharesAcumulado(fbId, token);
     await sleep(500);
 
-    const { data: acumuladoHoyExiste } = await supabase
-      .from("acumulado_share_diarios")
+    const { data: acumuladoShareHoyExiste } = await supabase
+      .from("insights_acumulado_share_diarios")
       .select("id")
       .eq("id_pagina", dbId)
       .eq("fecha", hoy)
       .maybeSingle();
 
-    if (!acumuladoHoyExiste) {
-      await supabase.from("acumulado_share_diarios").insert({
+    if (!acumuladoShareHoyExiste) {
+      await supabase.from("insights_acumulado_share_diarios").insert({
         id_pagina: dbId,
         share: sharesAcumuladosHoy,
         fecha: hoy,
       });
       console.log(`📦 Acumulado shares guardado: página ${dbId} → ${hoy}: ${sharesAcumuladosHoy}`);
+    }
+
+    // ✅ Impresiones acumuladas de hoy
+    const { data: acumuladoImpHoyExiste } = await supabase
+      .from("insights_acumulado_impresiones_share")
+      .select("id")
+      .eq("pagina", dbId)
+      .eq("fecha", hoy)
+      .maybeSingle();
+
+    if (!acumuladoImpHoyExiste) {
+      const { totalPosts, totalImpresiones, totalImpresionesUnicas } =
+        await getTotalImpresionesAcumulado(fbId, token);
+      await sleep(500);
+
+      await supabase.from("insights_acumulado_impresiones_share").insert({
+        pagina: dbId,
+        fecha: hoy,
+        total_post: totalPosts,
+        impresiones: totalImpresiones,
+        impresiones_unicas: totalImpresionesUnicas,
+      });
+      console.log(`📦 Acumulado impresiones guardado: página ${dbId} → ${hoy}: posts=${totalPosts} imp=${totalImpresiones} imp_unicas=${totalImpresionesUnicas}`);
     }
 
     for (const day of diasFaltantes) {
@@ -245,11 +325,11 @@ async function main() {
         return d.toISOString().split("T")[0];
       })();
 
-      // ✅ Impresiones totales — nueva métrica page_media_view
+      // ✅ Impresiones totales
       const impresiones = await getMetric(fbId, token, "page_media_view", day, until);
       await sleep(300);
 
-      // ✅ Impresiones únicas — sigue funcionando con period day
+      // ✅ Impresiones únicas
       const impresiones_unicas = await getMetric(fbId, token, "page_impressions_unique", day, until);
       await sleep(300);
 
@@ -279,23 +359,46 @@ async function main() {
       const estimado_impresiones_unicas_acumuladas = Math.max(0, diffDays28 - diffPrimerDia + diffUltimoDia);
 
       // ✅ Shares del día
-      const { data: acumuladoDia } = await supabase
-        .from("acumulado_share_diarios")
+      const { data: acumuladoShareDia } = await supabase
+        .from("insights_acumulado_share_diarios")
         .select("share")
         .eq("id_pagina", dbId)
         .eq("fecha", day)
         .maybeSingle();
 
-      const { data: acumuladoDiaAnterior } = await supabase
-        .from("acumulado_share_diarios")
+      const { data: acumuladoShareDiaAnterior } = await supabase
+        .from("insights_acumulado_share_diarios")
         .select("share")
         .eq("id_pagina", dbId)
         .eq("fecha", dayPrev)
         .maybeSingle();
 
       let share = 0;
-      if (acumuladoDia && acumuladoDiaAnterior) {
-        share = Math.max(0, acumuladoDia.share - acumuladoDiaAnterior.share);
+      if (acumuladoShareDia && acumuladoShareDiaAnterior) {
+        share = Math.max(0, acumuladoShareDia.share - acumuladoShareDiaAnterior.share);
+      }
+
+      // ✅ Impresiones post share del día
+      const { data: acumuladoImpDia } = await supabase
+        .from("insights_acumulado_impresiones_share")
+        .select("impresiones, impresiones_unicas, total_post")
+        .eq("pagina", dbId)
+        .eq("fecha", day)
+        .maybeSingle();
+
+      const { data: acumuladoImpDiaAnterior } = await supabase
+        .from("insights_acumulado_impresiones_share")
+        .select("impresiones, impresiones_unicas, total_post")
+        .eq("pagina", dbId)
+        .eq("fecha", dayPrev)
+        .maybeSingle();
+
+      let impresiones_post_share = 0;
+      let impresiones_unicas_post_share = 0;
+
+      if (acumuladoImpDia && acumuladoImpDiaAnterior) {
+        impresiones_post_share = Math.max(0, acumuladoImpDia.impresiones - acumuladoImpDiaAnterior.impresiones);
+        impresiones_unicas_post_share = Math.max(0, acumuladoImpDia.impresiones_unicas - acumuladoImpDiaAnterior.impresiones_unicas);
       }
 
       await sleep(300);
@@ -309,9 +412,11 @@ async function main() {
         engagement,
         impresiones_days_28,
         estimado_impresiones_unicas_acumuladas,
+        impresiones_post_share,
+        impresiones_unicas_post_share,
       });
 
-      const { error } = await supabase.from("reporte_diario").insert({
+      const { error } = await supabase.from("insights_reporte_diario").insert({
         pagina: dbId,
         impresiones,
         impresiones_unicas,
@@ -321,6 +426,8 @@ async function main() {
         engagement,
         impresiones_days_28,
         estimado_impresiones_unicas_acumuladas,
+        impresiones_post_share,
+        impresiones_unicas_post_share,
         fecha: day,
         created_at: new Date().toISOString(),
       });
