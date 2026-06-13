@@ -163,7 +163,6 @@ async function getTotalSharesAcumulado(pageId, token) {
   return total;
 }
 
-// ✅ Obtener acumulado total de impresiones de todos los posts
 async function getTotalImpresionesAcumulado(pageId, token) {
   let url = `https://graph.facebook.com/v21.0/${pageId}/posts`;
   let totalPosts = 0;
@@ -171,7 +170,6 @@ async function getTotalImpresionesAcumulado(pageId, token) {
   let totalImpresionesUnicas = 0;
 
   try {
-    // Obtener todos los posts
     const posts = [];
     while (url) {
       const res = await axios.get(url, {
@@ -186,7 +184,6 @@ async function getTotalImpresionesAcumulado(pageId, token) {
     totalPosts = posts.length;
     console.log(`📝 Total posts encontrados: ${totalPosts}`);
 
-    // Obtener impresiones de cada post
     for (const postId of posts) {
       try {
         const res = await axios.get(
@@ -221,11 +218,19 @@ async function getTotalImpresionesAcumulado(pageId, token) {
 }
 
 async function main() {
-  const { data: pages, error: pagesError } = await supabase.from("pages").select("*");
+  // ✅ Solo páginas con clasificacion=1 y red_social=2
+  const { data: pages, error: pagesError } = await supabase
+    .from("community_paginas")
+    .select("*")
+    .eq("clasificacion", 1)
+    .eq("red_social", 2);
+
   if (pagesError || !pages?.length) {
     console.log("❌ Error cargando páginas:", pagesError);
     return;
   }
+
+  console.log(`📄 Páginas encontradas: ${pages.length}`);
 
   const { data: contratos, error: contratosError } = await supabase
     .from("contratos_servicios")
@@ -244,14 +249,16 @@ async function main() {
   const allDays = generateDays(startDate, yesterday);
 
   console.log(`📅 Rango total: ${startDate} → ${yesterday} (${allDays.length} días)`);
-  console.log(`📄 Páginas: ${pages.length}`);
 
   for (const page of pages) {
     const fbId = page.id_page;
     const dbId = page.id;
     const token = page.token;
 
-    if (!fbId || !token) continue;
+    if (!fbId || !token) {
+      console.warn(`⚠️ Página ${dbId} sin id_page o token, saltando...`);
+      continue;
+    }
 
     const { data: registros } = await supabase
       .from("insights_reporte_diario")
@@ -325,14 +332,10 @@ async function main() {
         return d.toISOString().split("T")[0];
       })();
 
-      // ✅ Impresiones totales
       const impresiones = await getMetric(fbId, token, "page_media_view", day, until);
       await sleep(300);
-
-      // ✅ Impresiones únicas
       const impresiones_unicas = await getMetric(fbId, token, "page_impressions_unique", day, until);
       await sleep(300);
-
       const vistas_perfil = await getMetric(fbId, token, "page_views_total", day, until);
       await sleep(300);
       const reactions = await getReactions(fbId, token, day, until);
