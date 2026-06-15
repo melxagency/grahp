@@ -168,23 +168,39 @@ async function getAcumuladoTodosLosPosts(pageId, token) {
     }
 
     totalPosts = posts.length;
-    console.log(`📝 Total posts página: ${totalPosts}`);
+    console.log(`📝 Total posts página ${pageId}: ${totalPosts}`);
 
     for (const postId of posts) {
       try {
-        const res = await axios.get(
+        // ✅ Llamada 1: impresiones
+        const res1 = await axios.get(
           `https://graph.facebook.com/v21.0/${postId}/insights`,
           {
             params: {
-              metric: "post_media_view,post_impressions_unique,post_reactions_by_type_total,post_engaged_users",
+              metric: "post_media_view,post_impressions_unique",
               access_token: token,
             },
           }
         );
-        for (const metric of res.data?.data || []) {
+        for (const metric of res1.data?.data || []) {
           const value = metric.values?.[0]?.value || 0;
           if (metric.name === "post_media_view") totalImpresiones += Number(value) || 0;
           if (metric.name === "post_impressions_unique") totalImpresionesUnicas += Number(value) || 0;
+        }
+        await sleep(100);
+
+        // ✅ Llamada 2: reactions y engagement
+        const res2 = await axios.get(
+          `https://graph.facebook.com/v21.0/${postId}/insights`,
+          {
+            params: {
+              metric: "post_reactions_by_type_total,post_engaged_users",
+              access_token: token,
+            },
+          }
+        );
+        for (const metric of res2.data?.data || []) {
+          const value = metric.values?.[0]?.value || 0;
           if (metric.name === "post_reactions_by_type_total") {
             totalReactions += typeof value === "object"
               ? Object.values(value).reduce((s, n) => s + (Number(n) || 0), 0)
@@ -193,7 +209,10 @@ async function getAcumuladoTodosLosPosts(pageId, token) {
           if (metric.name === "post_engaged_users") totalEngagement += Number(value) || 0;
         }
         await sleep(100);
-      } catch { /* silencioso */ }
+
+      } catch (err) {
+        console.log(`⚠️ Error en post ${postId}:`, err.response?.data?.error?.message || err.message);
+      }
     }
   } catch (err) {
     console.log("❌ ACUMULADO TODOS POSTS ERROR:", err.response?.data?.error?.message || err.message);
@@ -202,6 +221,8 @@ async function getAcumuladoTodosLosPosts(pageId, token) {
   const frecuencia = totalImpresionesUnicas > 0
     ? Math.round((totalImpresiones / totalImpresionesUnicas) * 100) / 100
     : 0;
+
+  console.log(`📊 Acumulado página ${pageId}: imp=${totalImpresiones} imp_u=${totalImpresionesUnicas} react=${totalReactions} eng=${totalEngagement} shares=${totalShare}`);
 
   return { totalShare, totalImpresiones, totalImpresionesUnicas, frecuencia, totalReactions, totalEngagement, totalPosts };
 }
@@ -227,19 +248,35 @@ async function getAcumuladoPostsComunidad(dbPageId, token) {
 
   for (const post of posts) {
     try {
-      const res = await axios.get(
+      // ✅ Llamada 1: impresiones
+      const res1 = await axios.get(
         `https://graph.facebook.com/v21.0/${post.post_id}/insights`,
         {
           params: {
-            metric: "post_media_view,post_impressions_unique,post_reactions_by_type_total,post_engaged_users",
+            metric: "post_media_view,post_impressions_unique",
             access_token: token,
           },
         }
       );
-      for (const metric of res.data?.data || []) {
+      for (const metric of res1.data?.data || []) {
         const value = metric.values?.[0]?.value || 0;
         if (metric.name === "post_media_view") totalImpresiones += Number(value) || 0;
         if (metric.name === "post_impressions_unique") totalImpresionesUnicas += Number(value) || 0;
+      }
+      await sleep(100);
+
+      // ✅ Llamada 2: reactions y engagement
+      const res2 = await axios.get(
+        `https://graph.facebook.com/v21.0/${post.post_id}/insights`,
+        {
+          params: {
+            metric: "post_reactions_by_type_total,post_engaged_users",
+            access_token: token,
+          },
+        }
+      );
+      for (const metric of res2.data?.data || []) {
+        const value = metric.values?.[0]?.value || 0;
         if (metric.name === "post_reactions_by_type_total") {
           totalReactions += typeof value === "object"
             ? Object.values(value).reduce((s, n) => s + (Number(n) || 0), 0)
@@ -248,12 +285,17 @@ async function getAcumuladoPostsComunidad(dbPageId, token) {
         if (metric.name === "post_engaged_users") totalEngagement += Number(value) || 0;
       }
       await sleep(100);
-    } catch { /* silencioso */ }
+
+    } catch (err) {
+      console.log(`⚠️ Error en post comunidad ${post.post_id}:`, err.response?.data?.error?.message || err.message);
+    }
   }
 
   const frecuencia = totalImpresionesUnicas > 0
     ? Math.round((totalImpresiones / totalImpresionesUnicas) * 100) / 100
     : 0;
+
+  console.log(`📊 Acumulado posts comunidad: posts=${totalAutoPost} imp=${totalImpresiones} imp_u=${totalImpresionesUnicas}`);
 
   return { totalAutoPost, totalImpresiones, totalImpresionesUnicas, frecuencia, totalReactions, totalEngagement };
 }
@@ -415,7 +457,7 @@ async function main() {
       const diffUltimoDia = impresiones_unicas - uniqueAyer;
       const estimado_impresiones_unicas_acumuladas = Math.max(0, diffDays28 - diffPrimerDia + diffUltimoDia);
 
-      // ✅ Share del día = diferencia diaria de insights_acumulado_share
+      // ✅ Obtener acumulado share del día y día anterior
       const { data: acShareDia } = await supabase
         .from("insights_acumulado_share")
         .select("share, impresiones, impresiones_unicas, reactions, engagement")
@@ -437,10 +479,10 @@ async function main() {
       let engagement_auto = engagement;
 
       if (acShareDia && acShareDiaAnterior) {
-        // Share del día
+        // ✅ Share del día = diferencia diaria de shares acumulados
         share = Math.max(0, acShareDia.share - acShareDiaAnterior.share);
 
-        // Diferencia diaria del acumulado share
+        // ✅ Diferencia diaria del acumulado share
         const diffImpShare = Math.max(0, acShareDia.impresiones - acShareDiaAnterior.impresiones);
         const diffImpUnicasShare = Math.max(0, acShareDia.impresiones_unicas - acShareDiaAnterior.impresiones_unicas);
         const diffReactionsShare = Math.max(0, acShareDia.reactions - acShareDiaAnterior.reactions);
