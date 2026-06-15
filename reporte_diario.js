@@ -273,7 +273,7 @@ async function main() {
   console.log(`📄 Páginas encontradas: ${pages.length}`);
 
   const { data: contratos, error: contratosError } = await supabase
-    .from("contratos_servicios")
+    .from("comercial_contratos_servicios")
     .select("fecha_inicio")
     .order("fecha_inicio", { ascending: true })
     .limit(1);
