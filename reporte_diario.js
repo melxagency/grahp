@@ -144,45 +144,31 @@ async function getReactions(pageId, token, since, until, retries = 3) {
   return 0;
 }
 
-async function getTotalSharesAcumulado(pageId, token) {
+// ✅ Acumulado de TODOS los posts de la página
+async function getAcumuladoTodosLosPosts(pageId, token) {
   let url = `https://graph.facebook.com/v21.0/${pageId}/posts`;
-  let total = 0;
-  try {
-    while (url) {
-      const res = await axios.get(url, {
-        params: { fields: "shares", limit: 100, access_token: token },
-      });
-      for (const post of res.data?.data || []) {
-        total += post.shares?.count || 0;
-      }
-      url = res.data?.paging?.next || null;
-    }
-  } catch (err) {
-    console.log("❌ SHARE ACUMULADO ERROR:", err.response?.data?.error?.message || err.message);
-  }
-  return total;
-}
-
-async function getTotalImpresionesAcumulado(pageId, token) {
-  let url = `https://graph.facebook.com/v21.0/${pageId}/posts`;
-  let totalPosts = 0;
+  let totalShare = 0;
   let totalImpresiones = 0;
   let totalImpresionesUnicas = 0;
+  let totalReactions = 0;
+  let totalEngagement = 0;
+  let totalPosts = 0;
 
   try {
     const posts = [];
     while (url) {
       const res = await axios.get(url, {
-        params: { fields: "id", limit: 100, access_token: token },
+        params: { fields: "id,shares", limit: 100, access_token: token },
       });
       for (const post of res.data?.data || []) {
         posts.push(post.id);
+        totalShare += post.shares?.count || 0;
       }
       url = res.data?.paging?.next || null;
     }
 
     totalPosts = posts.length;
-    console.log(`📝 Total posts encontrados: ${totalPosts}`);
+    console.log(`📝 Total posts página: ${totalPosts}`);
 
     for (const postId of posts) {
       try {
@@ -190,35 +176,89 @@ async function getTotalImpresionesAcumulado(pageId, token) {
           `https://graph.facebook.com/v21.0/${postId}/insights`,
           {
             params: {
-              metric: "post_media_view,post_impressions_unique",
+              metric: "post_media_view,post_impressions_unique,post_reactions_by_type_total,post_engaged_users",
               access_token: token,
             },
           }
         );
-
         for (const metric of res.data?.data || []) {
           const value = metric.values?.[0]?.value || 0;
-          if (metric.name === "post_media_view") {
-            totalImpresiones += Number(value) || 0;
+          if (metric.name === "post_media_view") totalImpresiones += Number(value) || 0;
+          if (metric.name === "post_impressions_unique") totalImpresionesUnicas += Number(value) || 0;
+          if (metric.name === "post_reactions_by_type_total") {
+            totalReactions += typeof value === "object"
+              ? Object.values(value).reduce((s, n) => s + (Number(n) || 0), 0)
+              : Number(value) || 0;
           }
-          if (metric.name === "post_impressions_unique") {
-            totalImpresionesUnicas += Number(value) || 0;
-          }
+          if (metric.name === "post_engaged_users") totalEngagement += Number(value) || 0;
         }
         await sleep(100);
-      } catch {
-        // silencioso por post individual
-      }
+      } catch { /* silencioso */ }
     }
   } catch (err) {
-    console.log("❌ IMPRESIONES ACUMULADO ERROR:", err.response?.data?.error?.message || err.message);
+    console.log("❌ ACUMULADO TODOS POSTS ERROR:", err.response?.data?.error?.message || err.message);
   }
 
-  return { totalPosts, totalImpresiones, totalImpresionesUnicas };
+  const frecuencia = totalImpresionesUnicas > 0
+    ? Math.round((totalImpresiones / totalImpresionesUnicas) * 100) / 100
+    : 0;
+
+  return { totalShare, totalImpresiones, totalImpresionesUnicas, frecuencia, totalReactions, totalEngagement, totalPosts };
+}
+
+// ✅ Acumulado solo de posts en comercial_post_community_paginas con activo=true
+async function getAcumuladoPostsComunidad(dbPageId, token) {
+  const { data: posts } = await supabase
+    .from("comercial_post_community_paginas")
+    .select("post_id")
+    .eq("pagina", dbPageId)
+    .eq("activo", true);
+
+  if (!posts?.length) return {
+    totalAutoPost: 0, totalImpresiones: 0, totalImpresionesUnicas: 0,
+    frecuencia: 0, totalReactions: 0, totalEngagement: 0,
+  };
+
+  let totalAutoPost = posts.length;
+  let totalImpresiones = 0;
+  let totalImpresionesUnicas = 0;
+  let totalReactions = 0;
+  let totalEngagement = 0;
+
+  for (const post of posts) {
+    try {
+      const res = await axios.get(
+        `https://graph.facebook.com/v21.0/${post.post_id}/insights`,
+        {
+          params: {
+            metric: "post_media_view,post_impressions_unique,post_reactions_by_type_total,post_engaged_users",
+            access_token: token,
+          },
+        }
+      );
+      for (const metric of res.data?.data || []) {
+        const value = metric.values?.[0]?.value || 0;
+        if (metric.name === "post_media_view") totalImpresiones += Number(value) || 0;
+        if (metric.name === "post_impressions_unique") totalImpresionesUnicas += Number(value) || 0;
+        if (metric.name === "post_reactions_by_type_total") {
+          totalReactions += typeof value === "object"
+            ? Object.values(value).reduce((s, n) => s + (Number(n) || 0), 0)
+            : Number(value) || 0;
+        }
+        if (metric.name === "post_engaged_users") totalEngagement += Number(value) || 0;
+      }
+      await sleep(100);
+    } catch { /* silencioso */ }
+  }
+
+  const frecuencia = totalImpresionesUnicas > 0
+    ? Math.round((totalImpresiones / totalImpresionesUnicas) * 100) / 100
+    : 0;
+
+  return { totalAutoPost, totalImpresiones, totalImpresionesUnicas, frecuencia, totalReactions, totalEngagement };
 }
 
 async function main() {
-  // ✅ Solo páginas con clasificacion=1 y red_social=2
   const { data: pages, error: pagesError } = await supabase
     .from("community_paginas")
     .select("*")
@@ -275,47 +315,60 @@ async function main() {
 
     console.log(`📊 Página ${dbId}: ${diasFaltantes.length} días faltantes`);
 
-    // ✅ Shares acumulados de hoy
-    const sharesAcumuladosHoy = await getTotalSharesAcumulado(fbId, token);
-    await sleep(500);
+    // ✅ 1. Guardar acumulado TODOS los posts en insights_acumulado_share
+    const { data: acumuladoShareHoy } = await supabase
+      .from("insights_acumulado_share")
+      .select("id_record")
+      .eq("id_pagina", dbId)
+      .eq("fecha", hoy)
+      .maybeSingle();
 
-    const { data: acumuladoShareHoyExiste } = await supabase
-      .from("insights_acumulado_share_diarios")
+    if (!acumuladoShareHoy) {
+      const acShare = await getAcumuladoTodosLosPosts(fbId, token);
+      await sleep(500);
+      const days28Hoy = await getDays28(fbId, token, hoy);
+      await sleep(300);
+
+      await supabase.from("insights_acumulado_share").insert({
+        id_pagina: dbId,
+        fecha: hoy,
+        share: acShare.totalShare,
+        impresiones: acShare.totalImpresiones,
+        impresiones_unicas: acShare.totalImpresionesUnicas,
+        frecuencia: acShare.frecuencia,
+        reactions: acShare.totalReactions,
+        engagement: acShare.totalEngagement,
+        impresiones_days_28: days28Hoy,
+      });
+      console.log(`📦 insights_acumulado_share guardado: página ${dbId} → ${hoy}`);
+    }
+
+    // ✅ 2. Guardar acumulado posts comunidad en insights_acumulado_post_community_paginas
+    const { data: acumuladoPostComHoy } = await supabase
+      .from("insights_acumulado_post_community_paginas")
       .select("id")
       .eq("id_pagina", dbId)
       .eq("fecha", hoy)
       .maybeSingle();
 
-    if (!acumuladoShareHoyExiste) {
-      await supabase.from("insights_acumulado_share_diarios").insert({
-        id_pagina: dbId,
-        share: sharesAcumuladosHoy,
-        fecha: hoy,
-      });
-      console.log(`📦 Acumulado shares guardado: página ${dbId} → ${hoy}: ${sharesAcumuladosHoy}`);
-    }
-
-    // ✅ Impresiones acumuladas de hoy
-    const { data: acumuladoImpHoyExiste } = await supabase
-      .from("insights_acumulado_impresiones_share")
-      .select("id")
-      .eq("pagina", dbId)
-      .eq("fecha", hoy)
-      .maybeSingle();
-
-    if (!acumuladoImpHoyExiste) {
-      const { totalPosts, totalImpresiones, totalImpresionesUnicas } =
-        await getTotalImpresionesAcumulado(fbId, token);
+    if (!acumuladoPostComHoy) {
+      const acPostCom = await getAcumuladoPostsComunidad(dbId, token);
       await sleep(500);
+      const days28PostCom = await getDays28(fbId, token, hoy);
+      await sleep(300);
 
-      await supabase.from("insights_acumulado_impresiones_share").insert({
-        pagina: dbId,
+      await supabase.from("insights_acumulado_post_community_paginas").insert({
+        id_pagina: dbId,
         fecha: hoy,
-        total_post: totalPosts,
-        impresiones: totalImpresiones,
-        impresiones_unicas: totalImpresionesUnicas,
+        total_auto_post: acPostCom.totalAutoPost,
+        impresiones: acPostCom.totalImpresiones,
+        impresiones_unicas: acPostCom.totalImpresionesUnicas,
+        frecuencia: acPostCom.frecuencia,
+        reactions: acPostCom.totalReactions,
+        engagement: acPostCom.totalEngagement,
+        impresiones_days_28: days28PostCom,
       });
-      console.log(`📦 Acumulado impresiones guardado: página ${dbId} → ${hoy}: posts=${totalPosts} imp=${totalImpresiones} imp_unicas=${totalImpresionesUnicas}`);
+      console.log(`📦 insights_acumulado_post_community_paginas guardado: página ${dbId} → ${hoy}`);
     }
 
     for (const day of diasFaltantes) {
@@ -332,6 +385,7 @@ async function main() {
         return d.toISOString().split("T")[0];
       })();
 
+      // ✅ Métricas totales del día
       const impresiones = await getMetric(fbId, token, "page_media_view", day, until);
       await sleep(300);
       const impresiones_unicas = await getMetric(fbId, token, "page_impressions_unique", day, until);
@@ -361,47 +415,69 @@ async function main() {
       const diffUltimoDia = impresiones_unicas - uniqueAyer;
       const estimado_impresiones_unicas_acumuladas = Math.max(0, diffDays28 - diffPrimerDia + diffUltimoDia);
 
-      // ✅ Shares del día
-      const { data: acumuladoShareDia } = await supabase
-        .from("insights_acumulado_share_diarios")
-        .select("share")
+      // ✅ Share del día = diferencia diaria de insights_acumulado_share
+      const { data: acShareDia } = await supabase
+        .from("insights_acumulado_share")
+        .select("share, impresiones, impresiones_unicas, reactions, engagement")
         .eq("id_pagina", dbId)
         .eq("fecha", day)
         .maybeSingle();
 
-      const { data: acumuladoShareDiaAnterior } = await supabase
-        .from("insights_acumulado_share_diarios")
-        .select("share")
+      const { data: acShareDiaAnterior } = await supabase
+        .from("insights_acumulado_share")
+        .select("share, impresiones, impresiones_unicas, reactions, engagement")
         .eq("id_pagina", dbId)
         .eq("fecha", dayPrev)
         .maybeSingle();
 
       let share = 0;
-      if (acumuladoShareDia && acumuladoShareDiaAnterior) {
-        share = Math.max(0, acumuladoShareDia.share - acumuladoShareDiaAnterior.share);
+      let impresiones_auto = impresiones;
+      let impresiones_unicas_auto = impresiones_unicas;
+      let reactions_auto = reactions;
+      let engagement_auto = engagement;
+
+      if (acShareDia && acShareDiaAnterior) {
+        // Share del día
+        share = Math.max(0, acShareDia.share - acShareDiaAnterior.share);
+
+        // Diferencia diaria del acumulado share
+        const diffImpShare = Math.max(0, acShareDia.impresiones - acShareDiaAnterior.impresiones);
+        const diffImpUnicasShare = Math.max(0, acShareDia.impresiones_unicas - acShareDiaAnterior.impresiones_unicas);
+        const diffReactionsShare = Math.max(0, acShareDia.reactions - acShareDiaAnterior.reactions);
+        const diffEngagementShare = Math.max(0, acShareDia.engagement - acShareDiaAnterior.engagement);
+
+        // ✅ Insights automáticos = total del día - diferencia diaria del acumulado share
+        impresiones_auto = Math.max(0, impresiones - diffImpShare);
+        impresiones_unicas_auto = Math.max(0, impresiones_unicas - diffImpUnicasShare);
+        reactions_auto = Math.max(0, reactions - diffReactionsShare);
+        engagement_auto = Math.max(0, engagement - diffEngagementShare);
       }
 
-      // ✅ Impresiones post share del día
-      const { data: acumuladoImpDia } = await supabase
-        .from("insights_acumulado_impresiones_share")
-        .select("impresiones, impresiones_unicas, total_post")
-        .eq("pagina", dbId)
+      // ✅ Guardar en insights_diario_groups_auto_post
+      const { data: diarioAutoExiste } = await supabase
+        .from("insights_diario_groups_auto_post")
+        .select("id")
+        .eq("id_pagina", dbId)
         .eq("fecha", day)
         .maybeSingle();
 
-      const { data: acumuladoImpDiaAnterior } = await supabase
-        .from("insights_acumulado_impresiones_share")
-        .select("impresiones, impresiones_unicas, total_post")
-        .eq("pagina", dbId)
-        .eq("fecha", dayPrev)
-        .maybeSingle();
+      if (!diarioAutoExiste) {
+        const frecuenciaAuto = impresiones_unicas_auto > 0
+          ? Math.round((impresiones_auto / impresiones_unicas_auto) * 100) / 100
+          : 0;
 
-      let impresiones_post_share = 0;
-      let impresiones_unicas_post_share = 0;
-
-      if (acumuladoImpDia && acumuladoImpDiaAnterior) {
-        impresiones_post_share = Math.max(0, acumuladoImpDia.impresiones - acumuladoImpDiaAnterior.impresiones);
-        impresiones_unicas_post_share = Math.max(0, acumuladoImpDia.impresiones_unicas - acumuladoImpDiaAnterior.impresiones_unicas);
+        await supabase.from("insights_diario_groups_auto_post").insert({
+          id_pagina: dbId,
+          fecha: day,
+          total_auto_post: share,
+          impresiones: impresiones_auto,
+          impresiones_unicas: impresiones_unicas_auto,
+          frecuencia: frecuenciaAuto,
+          reactions: reactions_auto,
+          engagement: engagement_auto,
+          impresiones_days_28: impresiones_days_28,
+        });
+        console.log(`📊 insights_diario_groups_auto_post guardado: página ${dbId} → ${day}`);
       }
 
       await sleep(300);
@@ -415,8 +491,10 @@ async function main() {
         engagement,
         impresiones_days_28,
         estimado_impresiones_unicas_acumuladas,
-        impresiones_post_share,
-        impresiones_unicas_post_share,
+        impresiones_auto,
+        impresiones_unicas_auto,
+        reactions_auto,
+        engagement_auto,
       });
 
       const { error } = await supabase.from("insights_reporte_diario").insert({
@@ -429,8 +507,8 @@ async function main() {
         engagement,
         impresiones_days_28,
         estimado_impresiones_unicas_acumuladas,
-        impresiones_post_share,
-        impresiones_unicas_post_share,
+        impresiones_post_share: impresiones_auto,
+        impresiones_unicas_post_share: impresiones_unicas_auto,
         fecha: day,
         created_at: new Date().toISOString(),
       });
