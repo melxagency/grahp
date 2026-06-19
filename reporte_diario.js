@@ -34,17 +34,6 @@ function prevDay(dateStr) {
   return d.toISOString().split("T")[0];
 }
 
-function generateDays(start, end) {
-  const days = [];
-  const current = new Date(start + "T00:00:00Z");
-  const last = new Date(end + "T00:00:00Z");
-  while (current <= last) {
-    days.push(current.toISOString().split("T")[0]);
-    current.setUTCDate(current.getUTCDate() + 1);
-  }
-  return days;
-}
-
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -287,23 +276,12 @@ async function main() {
 
   console.log(`📄 Páginas encontradas: ${pages.length}`);
 
-  const { data: contratos, error: contratosError } = await supabase
-    .from("comercial_contratos_servicios")
-    .select("fecha_inicio")
-    .order("fecha_inicio", { ascending: true })
-    .limit(1);
-
-  if (contratosError || !contratos?.length) {
-    console.log("❌ Error cargando contratos:", contratosError);
-    return;
-  }
-
-  const startDate = contratos[0].fecha_inicio.split("T")[0];
-  const yesterday = getYesterdayCuba();
   const hoy = getTodayCuba();
-  const allDays = generateDays(startDate, yesterday);
+  const day = getYesterdayCuba(); // ✅ Solo procesamos el día de ayer (el último día completo)
+  const dayPrev = prevDay(day);
+  const until = nextDay(day);
 
-  console.log(`📅 Rango total: ${startDate} → ${yesterday} (${allDays.length} días)`);
+  console.log(`📅 Procesando solo el día: ${day}`);
 
   for (const page of pages) {
     const fbId = page.id_page;
@@ -325,22 +303,7 @@ async function main() {
       continue;
     }
 
-    const { data: registros } = await supabase
-      .from("insights_diario_groups_auto_post")
-      .select("fecha")
-      .eq("id_pagina", dbId);
-
-    const fechasRegistradas = new Set((registros || []).map((r) => r.fecha));
-    const diasFaltantes = allDays.filter((d) => !fechasRegistradas.has(d));
-
-    if (!diasFaltantes.length) {
-      console.log(`✅ Página ${dbId} completa, sin días faltantes`);
-      continue;
-    }
-
-    console.log(`📊 Página ${dbId}: ${diasFaltantes.length} días faltantes`);
-
-    // ✅ 1. Guardar acumulado TODOS los posts en insights_acumulado_share
+    // ✅ PASO 1: Verificar/guardar insights_acumulado_share de HOY (siempre primero)
     const { data: acumuladoShareHoy } = await supabase
       .from("insights_acumulado_share")
       .select("id_record")
@@ -370,9 +333,11 @@ async function main() {
         impresiones_days_28: days28Hoy,
       });
       console.log(`📦 insights_acumulado_share guardado: página ${dbId} → ${hoy}`);
+    } else {
+      console.log(`✅ insights_acumulado_share ya existe: página ${dbId} → ${hoy}`);
     }
 
-    // ✅ 2. Guardar acumulado posts comunidad en insights_acumulado_post_community_paginas
+    // ✅ PASO 2: Verificar/guardar insights_acumulado_post_community_paginas de HOY
     const { data: acumuladoPostComHoy } = await supabase
       .from("insights_acumulado_post_community_paginas")
       .select("id")
@@ -402,94 +367,105 @@ async function main() {
         impresiones_days_28: days28PostCom,
       });
       console.log(`📦 insights_acumulado_post_community_paginas guardado: página ${dbId} → ${hoy}`);
+    } else {
+      console.log(`✅ insights_acumulado_post_community_paginas ya existe: página ${dbId} → ${hoy}`);
     }
 
-    for (const day of diasFaltantes) {
-      const until = nextDay(day);
-      const dayPrev = prevDay(day);
+    // ✅ PASO 3: Verificar si ya se registró insights_diario_groups_auto_post de AYER
+    const { data: diarioAutoExiste } = await supabase
+      .from("insights_diario_groups_auto_post")
+      .select("id")
+      .eq("id_pagina", dbId)
+      .eq("fecha", day)
+      .maybeSingle();
 
-      // ✅ Métricas totales del día
-      const impresiones = await getMetric(fbId, token, "page_media_view", day, until);
-      await sleep(300);
+    if (diarioAutoExiste) {
+      console.log(`✅ Página ${dbId} ya tiene insights_diario_groups_auto_post del día ${day}`);
+      continue;
+    }
 
-      // ✅ Impresiones únicas reales del día
-      const impresiones_unicas_dia = await getMetric(fbId, token, "page_total_media_view_unique", day, until);
-      await sleep(300);
+    console.log(`📊 Procesando insights del día ${day} para página ${dbId}`);
 
-      const reactions = await getReactions(fbId, token, day, until);
-      await sleep(300);
-      const engagement = await getMetric(fbId, token, "page_post_engagements", day, until);
-      await sleep(300);
+    // ✅ Métricas totales del día (ayer)
+    const impresiones = await getMetric(fbId, token, "page_media_view", day, until);
+    await sleep(300);
 
-      const days28Hoy = await getDays28(fbId, token, day);
-      await sleep(300);
+    const impresiones_unicas_dia = await getMetric(fbId, token, "page_total_media_view_unique", day, until);
+    await sleep(300);
 
-      const impresiones_days_28 = days28Hoy;
+    const reactions = await getReactions(fbId, token, day, until);
+    await sleep(300);
+    const engagement = await getMetric(fbId, token, "page_post_engagements", day, until);
+    await sleep(300);
 
-      // ✅ Obtener acumulado share del día y día anterior
-      const { data: acShareDia } = await supabase
-        .from("insights_acumulado_share")
-        .select("share, impresiones, reactions, engagement")
-        .eq("id_pagina", dbId)
-        .eq("fecha", day)
-        .maybeSingle();
+    const days28Dia = await getDays28(fbId, token, day);
+    await sleep(300);
 
-      const { data: acShareDiaAnterior } = await supabase
-        .from("insights_acumulado_share")
-        .select("share, impresiones, reactions, engagement")
-        .eq("id_pagina", dbId)
-        .eq("fecha", dayPrev)
-        .maybeSingle();
+    // ✅ PASO 4: Obtener acumulado share del día y día anterior (para la diferencia)
+    const { data: acShareDia } = await supabase
+      .from("insights_acumulado_share")
+      .select("share, impresiones, reactions, engagement")
+      .eq("id_pagina", dbId)
+      .eq("fecha", day)
+      .maybeSingle();
 
-      let share = 0;
-      let impresiones_auto = impresiones;
-      let reactions_auto = reactions;
-      let engagement_auto = engagement;
+    const { data: acShareDiaAnterior } = await supabase
+      .from("insights_acumulado_share")
+      .select("share, impresiones, reactions, engagement")
+      .eq("id_pagina", dbId)
+      .eq("fecha", dayPrev)
+      .maybeSingle();
 
-      if (acShareDia && acShareDiaAnterior) {
-        share = Math.max(0, acShareDia.share - acShareDiaAnterior.share);
+    let share = 0;
+    let impresiones_auto = impresiones;
+    let reactions_auto = reactions;
+    let engagement_auto = engagement;
 
-        const diffImpShare = Math.max(0, acShareDia.impresiones - acShareDiaAnterior.impresiones);
-        const diffReactionsShare = Math.max(0, acShareDia.reactions - acShareDiaAnterior.reactions);
-        const diffEngagementShare = Math.max(0, acShareDia.engagement - acShareDiaAnterior.engagement);
+    if (acShareDia && acShareDiaAnterior) {
+      share = Math.max(0, acShareDia.share - acShareDiaAnterior.share);
 
-        impresiones_auto = Math.max(0, impresiones - diffImpShare);
-        reactions_auto = Math.max(0, reactions - diffReactionsShare);
-        engagement_auto = Math.max(0, engagement - diffEngagementShare);
-      }
+      const diffImpShare = Math.max(0, acShareDia.impresiones - acShareDiaAnterior.impresiones);
+      const diffReactionsShare = Math.max(0, acShareDia.reactions - acShareDiaAnterior.reactions);
+      const diffEngagementShare = Math.max(0, acShareDia.engagement - acShareDiaAnterior.engagement);
 
-      const frecuenciaAuto = impresiones_unicas_dia > 0
-        ? Math.round((impresiones_auto / impresiones_unicas_dia) * 100) / 100
-        : 0;
+      impresiones_auto = Math.max(0, impresiones - diffImpShare);
+      reactions_auto = Math.max(0, reactions - diffReactionsShare);
+      engagement_auto = Math.max(0, engagement - diffEngagementShare);
+    } else {
+      console.log(`⚠️ Página ${dbId}: no hay acumulado_share del día ${day} o ${dayPrev}, registrando insight total sin restar`);
+    }
 
-      // ✅ Guardar en insights_diario_groups_auto_post
-      const { error } = await supabase.from("insights_diario_groups_auto_post").insert({
-        id_pagina: dbId,
-        fecha: day,
-        total_auto_post: share,
-        impresiones: impresiones_auto,
-        impresiones_unicas: impresiones_unicas_dia,
-        frecuencia: frecuenciaAuto,
-        reactions: reactions_auto,
-        engagement: engagement_auto,
-        impresiones_days_28: impresiones_days_28,
+    const frecuenciaAuto = impresiones_unicas_dia > 0
+      ? Math.round((impresiones_auto / impresiones_unicas_dia) * 100) / 100
+      : 0;
+
+    // ✅ Guardar en insights_diario_groups_auto_post
+    const { error } = await supabase.from("insights_diario_groups_auto_post").insert({
+      id_pagina: dbId,
+      fecha: day,
+      total_auto_post: share,
+      impresiones: impresiones_auto,
+      impresiones_unicas: impresiones_unicas_dia,
+      frecuencia: frecuenciaAuto,
+      reactions: reactions_auto,
+      engagement: engagement_auto,
+      impresiones_days_28: days28Dia,
+    });
+
+    if (error) {
+      console.log(`❌ INSERT ERROR ${dbId} → ${day}:`, error.message);
+    } else {
+      console.log(`✅ OK ${dbId} → ${day}`, {
+        impresiones_auto,
+        impresiones_unicas_dia,
+        reactions_auto,
+        engagement_auto,
+        share,
+        impresiones_days_28: days28Dia,
       });
-
-      if (error) {
-        console.log(`❌ INSERT ERROR ${dbId} → ${day}:`, error.message);
-      } else {
-        console.log(`✅ OK ${dbId} → ${day}`, {
-          impresiones_auto,
-          impresiones_unicas_dia,
-          reactions_auto,
-          engagement_auto,
-          share,
-          impresiones_days_28,
-        });
-      }
-
-      await sleep(300);
     }
+
+    await sleep(300);
   }
 
   console.log("🎉 Completado.");
