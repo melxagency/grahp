@@ -26,6 +26,8 @@ jobs:
       # =========================
       # 3. FETCH GROUPS (red_social = 2 → Facebook)
       # =========================
+      # community_groups.id_group ahora tiene relación directa con
+      # insights_crecimiento_acumulado_groups.id_group, así que basta con traer id_group.
       - name: Fetch Group IDs from Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -60,11 +62,15 @@ jobs:
       # =========================
       # 4. FETCH FACEBOOK DATA
       # =========================
+      # Llamamos a Graph API con id_group y armamos el payload con id_group + miembros + fecha
       - name: Fetch Facebook data
         env:
           FACEBOOK_TOKEN: ${{ secrets.FACEBOOK_TOKEN }}
         run: |
           echo "🔎 Processing Facebook groups..."
+
+          TODAY=$(date -u +%F)
+          echo "📅 Fecha del registro: $TODAY"
 
           RESULT="[]"
 
@@ -99,7 +105,8 @@ jobs:
             RESULT=$(echo "$RESULT" | jq \
               --argjson id "$GROUP_ID" \
               --argjson count "$COUNT" \
-              '. + [{"id_group": $id, "miembros": $count}]')
+              --arg fecha "$TODAY" \
+              '. + [{"id_group": $id, "miembros": $count, "fecha": $fecha}]')
           done
 
           echo "$RESULT" > insert_payload.json
@@ -110,6 +117,8 @@ jobs:
       # =========================
       # 5. INSERT INTO SUPABASE (histórico diario)
       # =========================
+      # FK: insights_crecimiento_acumulado_groups.id_group -> community_groups.id_group (directo)
+      # Cada fila incluye id_group, miembros y fecha (snapshot del día).
       - name: Insert into insights_crecimiento_acumulado_groups
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
