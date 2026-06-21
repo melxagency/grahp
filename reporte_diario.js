@@ -141,6 +141,7 @@ async function getAcumuladoTodosLosPosts(pageId, token) {
   let totalReactions = 0;
   let totalEngagement = 0;
   let totalPosts = 0;
+  let postsConError = 0;
 
   try {
     const posts = [];
@@ -164,12 +165,17 @@ async function getAcumuladoTodosLosPosts(pageId, token) {
           `https://graph.facebook.com/v21.0/${postId}/insights`,
           { params: { metric: "post_media_view", access_token: token } }
         );
+
+        // 🔍 LOG TEMPORAL para depurar
+        console.log(`🔍 Post ${postId}:`, JSON.stringify(res1.data));
+
         for (const metric of res1.data?.data || []) {
           const value = metric.values?.[0]?.value || 0;
           if (metric.name === "post_media_view") totalImpresiones += Number(value) || 0;
         }
         await sleep(100);
       } catch (err) {
+        postsConError++;
         console.log(`⚠️ Error impresiones post ${postId}:`, err.response?.data?.error?.message || err.message);
       }
 
@@ -198,6 +204,8 @@ async function getAcumuladoTodosLosPosts(pageId, token) {
         console.log(`⚠️ Error reactions post ${postId}:`, err.response?.data?.error?.message || err.message);
       }
     }
+
+    console.log(`📊 Posts con error en impresiones: ${postsConError}/${totalPosts}`);
   } catch (err) {
     console.log("❌ ACUMULADO TODOS POSTS ERROR:", err.response?.data?.error?.message || err.message);
   }
@@ -277,7 +285,7 @@ async function main() {
   console.log(`📄 Páginas encontradas: ${pages.length}`);
 
   const hoy = getTodayCuba();
-  const day = getYesterdayCuba(); // ✅ Solo procesamos el día de ayer (el último día completo)
+  const day = getYesterdayCuba();
   const dayPrev = prevDay(day);
   const until = nextDay(day);
 
@@ -293,7 +301,6 @@ async function main() {
       continue;
     }
 
-    // ✅ Verificar que la página es accesible antes de procesar
     try {
       await axios.get(`https://graph.facebook.com/v21.0/${fbId}`, {
         params: { fields: "id", access_token: token },
@@ -303,7 +310,7 @@ async function main() {
       continue;
     }
 
-    // ✅ PASO 1: Verificar/guardar insights_acumulado_share de HOY (siempre primero)
+    // ✅ PASO 1: Guardar insights_acumulado_share de HOY (siempre primero)
     const { data: acumuladoShareHoy } = await supabase
       .from("insights_acumulado_share")
       .select("id_record")
@@ -337,7 +344,7 @@ async function main() {
       console.log(`✅ insights_acumulado_share ya existe: página ${dbId} → ${hoy}`);
     }
 
-    // ✅ PASO 2: Verificar/guardar insights_acumulado_post_community_paginas de HOY
+    // ✅ PASO 2: Guardar insights_acumulado_post_community_paginas de HOY
     const { data: acumuladoPostComHoy } = await supabase
       .from("insights_acumulado_post_community_paginas")
       .select("id")
@@ -386,7 +393,6 @@ async function main() {
 
     console.log(`📊 Procesando insights del día ${day} para página ${dbId}`);
 
-    // ✅ Métricas totales del día (ayer)
     const impresiones = await getMetric(fbId, token, "page_media_view", day, until);
     await sleep(300);
 
@@ -439,7 +445,6 @@ async function main() {
       ? Math.round((impresiones_auto / impresiones_unicas_dia) * 100) / 100
       : 0;
 
-    // ✅ Guardar en insights_diario_groups_auto_post
     const { error } = await supabase.from("insights_diario_groups_auto_post").insert({
       id_pagina: dbId,
       fecha: day,
