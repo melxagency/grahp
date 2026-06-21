@@ -97,40 +97,18 @@ async function getDays28(pageId, token, day, retries = 3) {
   return 0;
 }
 
-async function getReactions(pageId, token, since, until, retries = 3) {
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      const res = await axios.get(
-        `https://graph.facebook.com/v21.0/${pageId}/insights`,
-        {
-          params: {
-            metric: "page_actions_post_reactions_total",
-            period: "day",
-            since,
-            until,
-            access_token: token,
-          },
-        }
-      );
-      const values = res.data.data?.[0]?.values || [];
-      return values.reduce((sum, v) => {
-        if (typeof v.value === "object" && v.value !== null) {
-          return sum + Object.values(v.value).reduce((s, n) => s + (Number(n) || 0), 0);
-        }
-        return sum + (Number(v.value) || 0);
-      }, 0);
-    } catch (err) {
-      const isTransient = err.response?.data?.error?.is_transient;
-      const msg = err.response?.data?.error?.message || err.message;
-      if (isTransient && attempt < retries) {
-        await sleep(attempt * 3000);
-      } else {
-        console.log(`❌ REACTIONS ERROR:`, msg);
-        return 0;
-      }
-    }
+// ✅ Obtener comentarios de un post via summary
+async function getComentariosPost(postId, token) {
+  try {
+    const res = await axios.get(
+      `https://graph.facebook.com/v21.0/${postId}/comments`,
+      { params: { summary: "true", limit: 0, access_token: token } }
+    );
+    return res.data?.summary?.total_count || 0;
+  } catch (err) {
+    console.log(`⚠️ Error comentarios post ${postId}:`, err.response?.data?.error?.message || err.message);
+    return 0;
   }
-  return 0;
 }
 
 // ✅ Acumulado de TODOS los posts de la página
@@ -138,10 +116,11 @@ async function getAcumuladoTodosLosPosts(pageId, token) {
   let url = `https://graph.facebook.com/v21.0/${pageId}/posts`;
   let totalShare = 0;
   let totalImpresiones = 0;
+  let totalImpresionesUnicas = 0;
   let totalReactions = 0;
-  let totalEngagement = 0;
+  let totalClicks = 0;
+  let totalComentarios = 0;
   let totalPosts = 0;
-  let postsConError = 0;
 
   try {
     const posts = [];
@@ -160,39 +139,41 @@ async function getAcumuladoTodosLosPosts(pageId, token) {
     console.log(`📝 Total posts página ${pageId}: ${totalPosts}`);
 
     for (const postId of posts) {
+      // ✅ Impresiones totales + únicas
       try {
         const res1 = await axios.get(
           `https://graph.facebook.com/v21.0/${postId}/insights`,
-          { params: { metric: "post_media_view", access_token: token } }
+          { params: { metric: "post_media_view,post_total_media_view_unique", access_token: token } }
         );
-
-        // 🔍 LOG TEMPORAL para depurar
-        console.log(`🔍 Post ${postId}:`, JSON.stringify(res1.data));
-
         for (const metric of res1.data?.data || []) {
-          const value = metric.values?.[0]?.value || 0;
-          if (metric.name === "post_media_view") totalImpresiones += Number(value) || 0;
+          if (metric.period === "lifetime") {
+            const value = metric.values?.[0]?.value || 0;
+            if (metric.name === "post_media_view") totalImpresiones += Number(value) || 0;
+            if (metric.name === "post_total_media_view_unique") totalImpresionesUnicas += Number(value) || 0;
+          }
         }
         await sleep(100);
       } catch (err) {
-        postsConError++;
         console.log(`⚠️ Error impresiones post ${postId}:`, err.response?.data?.error?.message || err.message);
       }
 
+      // ✅ Clicks
       try {
         const res2 = await axios.get(
           `https://graph.facebook.com/v21.0/${postId}/insights`,
-          { params: { metric: "post_engaged_users", access_token: token } }
+          { params: { metric: "post_clicks", access_token: token } }
         );
         for (const metric of res2.data?.data || []) {
-          const value = metric.values?.[0]?.value || 0;
-          if (metric.name === "post_engaged_users") totalEngagement += Number(value) || 0;
+          if (metric.period === "lifetime") {
+            totalClicks += Number(metric.values?.[0]?.value) || 0;
+          }
         }
         await sleep(100);
       } catch (err) {
-        console.log(`⚠️ Error engagement post ${postId}:`, err.response?.data?.error?.message || err.message);
+        console.log(`⚠️ Error clicks post ${postId}:`, err.response?.data?.error?.message || err.message);
       }
 
+      // ✅ Reactions
       try {
         const res3 = await axios.get(
           `https://graph.facebook.com/v21.0/${postId}`,
@@ -203,16 +184,26 @@ async function getAcumuladoTodosLosPosts(pageId, token) {
       } catch (err) {
         console.log(`⚠️ Error reactions post ${postId}:`, err.response?.data?.error?.message || err.message);
       }
-    }
 
-    console.log(`📊 Posts con error en impresiones: ${postsConError}/${totalPosts}`);
+      // ✅ Comentarios
+      const comentarios = await getComentariosPost(postId, token);
+      totalComentarios += comentarios;
+      await sleep(100);
+    }
   } catch (err) {
     console.log("❌ ACUMULADO TODOS POSTS ERROR:", err.response?.data?.error?.message || err.message);
   }
 
-  console.log(`📊 Acumulado página ${pageId}: imp=${totalImpresiones} react=${totalReactions} eng=${totalEngagement} shares=${totalShare}`);
+  // ✅ engagement = shares + reactions + clicks + comentarios
+  const totalEngagement = totalShare + totalReactions + totalClicks + totalComentarios;
 
-  return { totalShare, totalImpresiones, totalReactions, totalEngagement, totalPosts };
+  const frecuencia = totalImpresionesUnicas > 0
+    ? Math.round((totalImpresiones / totalImpresionesUnicas) * 100) / 100
+    : 0;
+
+  console.log(`📊 Acumulado página ${pageId}: imp=${totalImpresiones} imp_unicas=${totalImpresionesUnicas} react=${totalReactions} clicks=${totalClicks} comentarios=${totalComentarios} shares=${totalShare} engagement=${totalEngagement}`);
+
+  return { totalShare, totalImpresiones, totalImpresionesUnicas, frecuencia, totalReactions, totalEngagement, totalPosts };
 }
 
 // ✅ Acumulado solo de posts en comercial_post_community_paginas con activo=true
@@ -224,23 +215,30 @@ async function getAcumuladoPostsComunidad(dbPageId, token) {
     .eq("activo", true);
 
   if (!posts?.length) return {
-    totalAutoPost: 0, totalImpresiones: 0, totalReactions: 0, totalEngagement: 0,
+    totalAutoPost: 0, totalImpresiones: 0, totalImpresionesUnicas: 0,
+    frecuencia: 0, totalReactions: 0, totalEngagement: 0,
   };
 
   let totalAutoPost = posts.length;
   let totalImpresiones = 0;
+  let totalImpresionesUnicas = 0;
   let totalReactions = 0;
-  let totalEngagement = 0;
+  let totalClicks = 0;
+  let totalComentarios = 0;
+  let totalShare = 0;
 
   for (const post of posts) {
     try {
       const res1 = await axios.get(
         `https://graph.facebook.com/v21.0/${post.post_id}/insights`,
-        { params: { metric: "post_media_view", access_token: token } }
+        { params: { metric: "post_media_view,post_total_media_view_unique", access_token: token } }
       );
       for (const metric of res1.data?.data || []) {
-        const value = metric.values?.[0]?.value || 0;
-        if (metric.name === "post_media_view") totalImpresiones += Number(value) || 0;
+        if (metric.period === "lifetime") {
+          const value = metric.values?.[0]?.value || 0;
+          if (metric.name === "post_media_view") totalImpresiones += Number(value) || 0;
+          if (metric.name === "post_total_media_view_unique") totalImpresionesUnicas += Number(value) || 0;
+        }
       }
       await sleep(100);
     } catch { /* silencioso */ }
@@ -248,11 +246,12 @@ async function getAcumuladoPostsComunidad(dbPageId, token) {
     try {
       const res2 = await axios.get(
         `https://graph.facebook.com/v21.0/${post.post_id}/insights`,
-        { params: { metric: "post_engaged_users", access_token: token } }
+        { params: { metric: "post_clicks", access_token: token } }
       );
       for (const metric of res2.data?.data || []) {
-        const value = metric.values?.[0]?.value || 0;
-        if (metric.name === "post_engaged_users") totalEngagement += Number(value) || 0;
+        if (metric.period === "lifetime") {
+          totalClicks += Number(metric.values?.[0]?.value) || 0;
+        }
       }
       await sleep(100);
     } catch { /* silencioso */ }
@@ -260,14 +259,25 @@ async function getAcumuladoPostsComunidad(dbPageId, token) {
     try {
       const res3 = await axios.get(
         `https://graph.facebook.com/v21.0/${post.post_id}`,
-        { params: { fields: "reactions.summary(true)", access_token: token } }
+        { params: { fields: "reactions.summary(true),shares", access_token: token } }
       );
       totalReactions += res3.data?.reactions?.summary?.total_count || 0;
+      totalShare += res3.data?.shares?.count || 0;
       await sleep(100);
     } catch { /* silencioso */ }
+
+    const comentarios = await getComentariosPost(post.post_id, token);
+    totalComentarios += comentarios;
+    await sleep(100);
   }
 
-  return { totalAutoPost, totalImpresiones, totalReactions, totalEngagement };
+  const totalEngagement = totalShare + totalReactions + totalClicks + totalComentarios;
+
+  const frecuencia = totalImpresionesUnicas > 0
+    ? Math.round((totalImpresiones / totalImpresionesUnicas) * 100) / 100
+    : 0;
+
+  return { totalAutoPost, totalImpresiones, totalImpresionesUnicas, frecuencia, totalReactions, totalEngagement };
 }
 
 async function main() {
@@ -321,23 +331,17 @@ async function main() {
     if (!acumuladoShareHoy) {
       const acShare = await getAcumuladoTodosLosPosts(fbId, token);
       await sleep(500);
-      const days28Hoy = await getDays28(fbId, token, hoy);
-      await sleep(300);
-
-      const frecuencia = days28Hoy > 0
-        ? Math.round((acShare.totalImpresiones / days28Hoy) * 100) / 100
-        : 0;
 
       await supabase.from("insights_acumulado_share").insert({
         id_pagina: dbId,
         fecha: hoy,
         share: acShare.totalShare,
         impresiones: acShare.totalImpresiones,
-        impresiones_unicas: days28Hoy,
-        frecuencia,
+        impresiones_unicas: acShare.totalImpresionesUnicas,
+        frecuencia: acShare.frecuencia,
         reactions: acShare.totalReactions,
         engagement: acShare.totalEngagement,
-        impresiones_days_28: days28Hoy,
+        impresiones_days_28: await getDays28(fbId, token, hoy),
       });
       console.log(`📦 insights_acumulado_share guardado: página ${dbId} → ${hoy}`);
     } else {
@@ -355,23 +359,17 @@ async function main() {
     if (!acumuladoPostComHoy) {
       const acPostCom = await getAcumuladoPostsComunidad(dbId, token);
       await sleep(500);
-      const days28PostCom = await getDays28(fbId, token, hoy);
-      await sleep(300);
-
-      const frecuenciaPostCom = days28PostCom > 0
-        ? Math.round((acPostCom.totalImpresiones / days28PostCom) * 100) / 100
-        : 0;
 
       await supabase.from("insights_acumulado_post_community_paginas").insert({
         id_pagina: dbId,
         fecha: hoy,
         total_auto_post: acPostCom.totalAutoPost,
         impresiones: acPostCom.totalImpresiones,
-        impresiones_unicas: days28PostCom,
-        frecuencia: frecuenciaPostCom,
+        impresiones_unicas: acPostCom.totalImpresionesUnicas,
+        frecuencia: acPostCom.frecuencia,
         reactions: acPostCom.totalReactions,
         engagement: acPostCom.totalEngagement,
-        impresiones_days_28: days28PostCom,
+        impresiones_days_28: await getDays28(fbId, token, hoy),
       });
       console.log(`📦 insights_acumulado_post_community_paginas guardado: página ${dbId} → ${hoy}`);
     } else {
@@ -395,19 +393,15 @@ async function main() {
 
     const impresiones = await getMetric(fbId, token, "page_media_view", day, until);
     await sleep(300);
-
     const impresiones_unicas_dia = await getMetric(fbId, token, "page_total_media_view_unique", day, until);
     await sleep(300);
-
-    const reactions = await getReactions(fbId, token, day, until);
+    const reactions = await getMetric(fbId, token, "page_actions_post_reactions_total", day, until);
     await sleep(300);
     const engagement = await getMetric(fbId, token, "page_post_engagements", day, until);
     await sleep(300);
-
     const days28Dia = await getDays28(fbId, token, day);
     await sleep(300);
 
-    // ✅ PASO 4: Obtener acumulado share del día y día anterior (para la diferencia)
     const { data: acShareDia } = await supabase
       .from("insights_acumulado_share")
       .select("share, impresiones, reactions, engagement")
