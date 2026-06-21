@@ -1,4 +1,4 @@
-name: Actualizar Miembros (Facebook + Telegram)
+name: Actualizar Miembros Community_Groups
 
 on:
   workflow_dispatch:
