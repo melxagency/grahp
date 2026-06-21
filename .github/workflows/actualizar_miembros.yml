@@ -3,7 +3,8 @@ name: Actualizar Miembros Actuales
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 7 1 * *'
+    # Corre todos los días a la 1:00 AM UTC
+    - cron: '0 5 * * *'
 
 jobs:
   count-members:
@@ -23,14 +24,14 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y jq
 
       # =========================
-      # 3. FETCH GROUPS
+      # 3. FETCH GROUPS (red_social = 2 → Facebook)
       # =========================
       - name: Fetch Group IDs from Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          echo "📡 Fetching group IDs..."
+          echo "📡 Fetching group IDs (red_social=2)..."
 
           if [ -z "$SUPABASE_KEY" ]; then
             echo "❌ ERROR: SUPABASE_KEY vacío"
@@ -38,7 +39,7 @@ jobs:
           fi
 
           RESPONSE=$(curl -s \
-            "${SUPABASE_URL}/rest/v1/facebook_groups?select=id_group&limit=1000" \
+            "${SUPABASE_URL}/rest/v1/community_groups?select=id_group&red_social=eq.2&limit=1000" \
             -H "apikey: ${SUPABASE_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_KEY}" \
             -H "Content-Type: application/json")
@@ -52,6 +53,9 @@ jobs:
             echo "❌ ERROR: Supabase no devolvió un array válido"
             exit 1
           fi
+
+          COUNT_GROUPS=$(jq 'length' groups.json)
+          echo "✅ Grupos encontrados: $COUNT_GROUPS"
 
       # =========================
       # 4. FETCH FACEBOOK DATA
@@ -67,6 +71,11 @@ jobs:
           for row in $(jq -c '.[]' groups.json); do
 
             GROUP_ID=$(echo "$row" | jq -r '.id_group')
+
+            if [ -z "$GROUP_ID" ] || [ "$GROUP_ID" = "null" ]; then
+              echo "⚠️ id_group vacío, omitiendo fila"
+              continue
+            fi
 
             echo "➡️ Procesando grupo: $GROUP_ID"
 
@@ -90,51 +99,53 @@ jobs:
             RESULT=$(echo "$RESULT" | jq \
               --argjson id "$GROUP_ID" \
               --argjson count "$COUNT" \
-              '. + [{"id_group": $id, "miembros_actuales": $count}]')
+              '. + [{"id_group": $id, "miembros": $count}]')
           done
 
-          echo "$RESULT" > update_payload.json
+          echo "$RESULT" > insert_payload.json
 
           echo "📦 PAYLOAD GENERADO:"
-          cat update_payload.json
+          cat insert_payload.json
 
       # =========================
-      # 5. UPDATE SUPABASE
+      # 5. INSERT INTO SUPABASE (histórico diario)
       # =========================
-      - name: Update Supabase
+      - name: Insert into insights_crecimiento_acumulado_groups
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          echo "🚀 Updating miembros_actuales..."
+          echo "🚀 Insertando registro diario de miembros..."
 
-          if [ ! -s update_payload.json ]; then
+          if [ ! -s insert_payload.json ]; then
             echo "❌ ERROR: payload vacío"
             exit 1
           fi
 
-          for row in $(jq -c '.[]' update_payload.json); do
+          ROW_COUNT=$(jq 'length' insert_payload.json)
 
-            GROUP_ID=$(echo "$row" | jq -r '.id_group')
-            COUNT=$(echo "$row" | jq -r '.miembros_actuales')
+          if [ "$ROW_COUNT" -eq 0 ]; then
+            echo "⚠️ No hay filas para insertar"
+            exit 0
+          fi
 
-            echo "📦 Updating $GROUP_ID → $COUNT"
+          echo "📦 Insertando $ROW_COUNT registros en bloque..."
 
-            RESPONSE=$(curl -s -w "\nHTTP: %{http_code}\n" -X PATCH \
-              "${SUPABASE_URL}/rest/v1/facebook_groups?id_group=eq.${GROUP_ID}" \
-              -H "apikey: ${SUPABASE_KEY}" \
-              -H "Authorization: Bearer ${SUPABASE_KEY}" \
-              -H "Content-Type: application/json" \
-              -H "Prefer: return=representation" \
-              -d "{\"miembros_actuales\": ${COUNT}}")
+          RESPONSE=$(curl -s -w "\nHTTP: %{http_code}\n" -X POST \
+            "${SUPABASE_URL}/rest/v1/insights_crecimiento_acumulado_groups" \
+            -H "apikey: ${SUPABASE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_KEY}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=representation" \
+            -d @insert_payload.json)
 
-            echo "$RESPONSE"
+          echo "$RESPONSE"
 
-            if [[ "$RESPONSE" == *"[]"* ]]; then
-              echo "⚠️ NO ACTUALIZÓ: $GROUP_ID"
-            else
-              echo "✅ OK: $GROUP_ID"
-            fi
-          done
+          if [[ "$RESPONSE" == *"HTTP: 2"* ]]; then
+            echo "✅ Inserción exitosa"
+          else
+            echo "❌ ERROR en la inserción"
+            exit 1
+          fi
 
-          echo "🎉 Supabase actualizado"
+          echo "🎉 Registro diario completado"
