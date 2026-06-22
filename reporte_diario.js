@@ -38,6 +38,20 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function registrarLogSistema(fecha) {
+  try {
+    await supabase.from("system_logs").insert({
+      clasificacion: 1,
+      descripcion: "Actualizacion insights",
+      fecha: fecha,
+      modulo: 2,
+    });
+    console.log(`📋 Log registrado en system_logs → ${fecha}`);
+  } catch (err) {
+    console.log("❌ Error registrando log:", err.message);
+  }
+}
+
 async function getMetric(pageId, token, metric, since, until, period = "day", retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -97,18 +111,39 @@ async function getDays28(pageId, token, day, retries = 3) {
   return 0;
 }
 
-// ✅ Obtener comentarios de un post — usando solo "fields" en vez de summary param
+// ✅ Obtener comentarios de UN post específico
 async function getComentariosPost(postId, token) {
   try {
     const res = await axios.get(
       `https://graph.facebook.com/v21.0/${postId}`,
       { params: { fields: "comments.summary(true).limit(0)", access_token: token } }
     );
-    const total = res.data?.comments?.summary?.total_count;
-    console.log(`🔍 Comentarios post ${postId}: ${total}`);
-    return total || 0;
+    const total = res.data?.comments?.summary?.total_count || 0;
+    console.log(`   💬 Post ${postId} → comentarios: ${total}`);
+    return total;
   } catch (err) {
-    console.log(`⚠️ Error comentarios post ${postId}:`, err.response?.data?.error?.message || err.message);
+    console.log(`   ⚠️ Error comentarios post ${postId}:`, err.response?.data?.error?.message || err.message);
+    return 0;
+  }
+}
+
+// ✅ Obtener clicks de UN post específico
+async function getClicksPost(postId, token) {
+  try {
+    const res = await axios.get(
+      `https://graph.facebook.com/v21.0/${postId}/insights`,
+      { params: { metric: "post_clicks", access_token: token } }
+    );
+    let clicks = 0;
+    for (const metric of res.data?.data || []) {
+      if (metric.period === "lifetime") {
+        clicks = Number(metric.values?.[0]?.value) || 0;
+      }
+    }
+    console.log(`   🖱️ Post ${postId} → clicks: ${clicks}`);
+    return clicks;
+  } catch (err) {
+    console.log(`   ⚠️ Error clicks post ${postId}:`, err.response?.data?.error?.message || err.message);
     return 0;
   }
 }
@@ -140,40 +175,36 @@ async function getAcumuladoTodosLosPosts(pageId, token) {
     totalPosts = posts.length;
     console.log(`📝 Total posts página ${pageId}: ${totalPosts}`);
 
-    for (const postId of posts) {
+    for (let i = 0; i < posts.length; i++) {
+      const postId = posts[i];
+      console.log(`🔄 Procesando post ${i + 1}/${posts.length}: ${postId}`);
+
       // ✅ Impresiones totales + únicas
       try {
         const res1 = await axios.get(
           `https://graph.facebook.com/v21.0/${postId}/insights`,
           { params: { metric: "post_media_view,post_total_media_view_unique", access_token: token } }
         );
+        let impPost = 0, impUnicasPost = 0;
         for (const metric of res1.data?.data || []) {
           if (metric.period === "lifetime") {
             const value = metric.values?.[0]?.value || 0;
-            if (metric.name === "post_media_view") totalImpresiones += Number(value) || 0;
-            if (metric.name === "post_total_media_view_unique") totalImpresionesUnicas += Number(value) || 0;
+            if (metric.name === "post_media_view") impPost = Number(value) || 0;
+            if (metric.name === "post_total_media_view_unique") impUnicasPost = Number(value) || 0;
           }
         }
-        await sleep(100);
+        totalImpresiones += impPost;
+        totalImpresionesUnicas += impUnicasPost;
+        console.log(`   📊 Post ${postId} → imp: ${impPost}, imp_unicas: ${impUnicasPost}`);
       } catch (err) {
-        console.log(`⚠️ Error impresiones post ${postId}:`, err.response?.data?.error?.message || err.message);
+        console.log(`   ⚠️ Error impresiones post ${postId}:`, err.response?.data?.error?.message || err.message);
       }
+      await sleep(200);
 
       // ✅ Clicks
-      try {
-        const res2 = await axios.get(
-          `https://graph.facebook.com/v21.0/${postId}/insights`,
-          { params: { metric: "post_clicks", access_token: token } }
-        );
-        for (const metric of res2.data?.data || []) {
-          if (metric.period === "lifetime") {
-            totalClicks += Number(metric.values?.[0]?.value) || 0;
-          }
-        }
-        await sleep(100);
-      } catch (err) {
-        console.log(`⚠️ Error clicks post ${postId}:`, err.response?.data?.error?.message || err.message);
-      }
+      const clicks = await getClicksPost(postId, token);
+      totalClicks += clicks;
+      await sleep(200);
 
       // ✅ Reactions
       try {
@@ -181,16 +212,20 @@ async function getAcumuladoTodosLosPosts(pageId, token) {
           `https://graph.facebook.com/v21.0/${postId}`,
           { params: { fields: "reactions.summary(true)", access_token: token } }
         );
-        totalReactions += res3.data?.reactions?.summary?.total_count || 0;
-        await sleep(100);
+        const react = res3.data?.reactions?.summary?.total_count || 0;
+        totalReactions += react;
+        console.log(`   ❤️ Post ${postId} → reactions: ${react}`);
       } catch (err) {
-        console.log(`⚠️ Error reactions post ${postId}:`, err.response?.data?.error?.message || err.message);
+        console.log(`   ⚠️ Error reactions post ${postId}:`, err.response?.data?.error?.message || err.message);
       }
+      await sleep(200);
 
       // ✅ Comentarios
       const comentarios = await getComentariosPost(postId, token);
       totalComentarios += comentarios;
-      await sleep(100);
+      await sleep(200);
+
+      console.log(`   ➡️ Acumulado parcial: imp=${totalImpresiones} clicks=${totalClicks} comentarios=${totalComentarios}`);
     }
   } catch (err) {
     console.log("❌ ACUMULADO TODOS POSTS ERROR:", err.response?.data?.error?.message || err.message);
@@ -202,7 +237,7 @@ async function getAcumuladoTodosLosPosts(pageId, token) {
     ? Math.round((totalImpresiones / totalImpresionesUnicas) * 100) / 100
     : 0;
 
-  console.log(`📊 Acumulado página ${pageId}: imp=${totalImpresiones} imp_unicas=${totalImpresionesUnicas} react=${totalReactions} clicks=${totalClicks} comentarios=${totalComentarios} shares=${totalShare} engagement=${totalEngagement}`);
+  console.log(`📊 RESUMEN FINAL página ${pageId}: imp=${totalImpresiones} imp_unicas=${totalImpresionesUnicas} react=${totalReactions} clicks=${totalClicks} comentarios=${totalComentarios} shares=${totalShare} engagement=${totalEngagement}`);
 
   return {
     totalShare, totalImpresiones, totalImpresionesUnicas, frecuencia,
@@ -244,21 +279,12 @@ async function getAcumuladoPostsComunidad(dbPageId, token) {
           if (metric.name === "post_total_media_view_unique") totalImpresionesUnicas += Number(value) || 0;
         }
       }
-      await sleep(100);
+      await sleep(200);
     } catch { /* silencioso */ }
 
-    try {
-      const res2 = await axios.get(
-        `https://graph.facebook.com/v21.0/${post.post_id}/insights`,
-        { params: { metric: "post_clicks", access_token: token } }
-      );
-      for (const metric of res2.data?.data || []) {
-        if (metric.period === "lifetime") {
-          totalClicks += Number(metric.values?.[0]?.value) || 0;
-        }
-      }
-      await sleep(100);
-    } catch { /* silencioso */ }
+    const clicks = await getClicksPost(post.post_id, token);
+    totalClicks += clicks;
+    await sleep(200);
 
     try {
       const res3 = await axios.get(
@@ -267,12 +293,12 @@ async function getAcumuladoPostsComunidad(dbPageId, token) {
       );
       totalReactions += res3.data?.reactions?.summary?.total_count || 0;
       totalShare += res3.data?.shares?.count || 0;
-      await sleep(100);
+      await sleep(200);
     } catch { /* silencioso */ }
 
     const comentarios = await getComentariosPost(post.post_id, token);
     totalComentarios += comentarios;
-    await sleep(100);
+    await sleep(200);
   }
 
   const totalEngagement = totalShare + totalReactions + totalClicks + totalComentarios;
@@ -476,6 +502,9 @@ async function main() {
 
     await sleep(300);
   }
+
+  // ✅ Registrar log en system_logs al finalizar
+  await registrarLogSistema(hoy);
 
   console.log("🎉 Completado.");
 }
