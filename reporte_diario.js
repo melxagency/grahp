@@ -97,14 +97,16 @@ async function getDays28(pageId, token, day, retries = 3) {
   return 0;
 }
 
-// ✅ Obtener comentarios de un post via summary
+// ✅ Obtener comentarios de un post — usando solo "fields" en vez de summary param
 async function getComentariosPost(postId, token) {
   try {
     const res = await axios.get(
-      `https://graph.facebook.com/v21.0/${postId}/comments`,
-      { params: { summary: "true", limit: 0, access_token: token } }
+      `https://graph.facebook.com/v21.0/${postId}`,
+      { params: { fields: "comments.summary(true).limit(0)", access_token: token } }
     );
-    return res.data?.summary?.total_count || 0;
+    const total = res.data?.comments?.summary?.total_count;
+    console.log(`🔍 Comentarios post ${postId}: ${total}`);
+    return total || 0;
   } catch (err) {
     console.log(`⚠️ Error comentarios post ${postId}:`, err.response?.data?.error?.message || err.message);
     return 0;
@@ -194,7 +196,6 @@ async function getAcumuladoTodosLosPosts(pageId, token) {
     console.log("❌ ACUMULADO TODOS POSTS ERROR:", err.response?.data?.error?.message || err.message);
   }
 
-  // ✅ engagement = shares + reactions + clicks + comentarios
   const totalEngagement = totalShare + totalReactions + totalClicks + totalComentarios;
 
   const frecuencia = totalImpresionesUnicas > 0
@@ -220,7 +221,6 @@ async function getAcumuladoPostsComunidad(dbPageId, token) {
   if (!posts?.length) return {
     totalAutoPost: 0, totalImpresiones: 0, totalImpresionesUnicas: 0,
     frecuencia: 0, totalReactions: 0, totalEngagement: 0,
-    totalClicks: 0, totalComentarios: 0,
   };
 
   let totalAutoPost = posts.length;
@@ -281,10 +281,7 @@ async function getAcumuladoPostsComunidad(dbPageId, token) {
     ? Math.round((totalImpresiones / totalImpresionesUnicas) * 100) / 100
     : 0;
 
-  return {
-    totalAutoPost, totalImpresiones, totalImpresionesUnicas, frecuencia,
-    totalReactions, totalEngagement, totalClicks, totalComentarios,
-  };
+  return { totalAutoPost, totalImpresiones, totalImpresionesUnicas, frecuencia, totalReactions, totalEngagement };
 }
 
 async function main() {
@@ -378,8 +375,6 @@ async function main() {
         frecuencia: acPostCom.frecuencia,
         reactions: acPostCom.totalReactions,
         engagement: acPostCom.totalEngagement,
-        comentarios: acPostCom.totalComentarios,
-        clicks: acPostCom.totalClicks,
         impresiones_days_28: await getDays28(fbId, token, hoy),
       });
       console.log(`📦 insights_acumulado_post_community_paginas guardado: página ${dbId} → ${hoy}`);
@@ -410,19 +405,21 @@ async function main() {
     await sleep(300);
     const engagement = await getMetric(fbId, token, "page_post_engagements", day, until);
     await sleep(300);
+    const vistas_perfil = await getMetric(fbId, token, "page_views_total", day, until);
+    await sleep(300);
     const days28Dia = await getDays28(fbId, token, day);
     await sleep(300);
 
     const { data: acShareDia } = await supabase
       .from("insights_acumulado_share")
-      .select("share, impresiones, reactions, engagement, comentarios, clicks")
+      .select("share, impresiones, reactions, engagement")
       .eq("id_pagina", dbId)
       .eq("fecha", day)
       .maybeSingle();
 
     const { data: acShareDiaAnterior } = await supabase
       .from("insights_acumulado_share")
-      .select("share, impresiones, reactions, engagement, comentarios, clicks")
+      .select("share, impresiones, reactions, engagement")
       .eq("id_pagina", dbId)
       .eq("fecha", dayPrev)
       .maybeSingle();
@@ -431,8 +428,6 @@ async function main() {
     let impresiones_auto = impresiones;
     let reactions_auto = reactions;
     let engagement_auto = engagement;
-    let comentarios_auto = 0;
-    let clicks_auto = 0;
 
     if (acShareDia && acShareDiaAnterior) {
       share = Math.max(0, acShareDia.share - acShareDiaAnterior.share);
@@ -440,14 +435,10 @@ async function main() {
       const diffImpShare = Math.max(0, acShareDia.impresiones - acShareDiaAnterior.impresiones);
       const diffReactionsShare = Math.max(0, acShareDia.reactions - acShareDiaAnterior.reactions);
       const diffEngagementShare = Math.max(0, acShareDia.engagement - acShareDiaAnterior.engagement);
-      const diffComentariosShare = Math.max(0, (acShareDia.comentarios || 0) - (acShareDiaAnterior.comentarios || 0));
-      const diffClicksShare = Math.max(0, (acShareDia.clicks || 0) - (acShareDiaAnterior.clicks || 0));
 
       impresiones_auto = Math.max(0, impresiones - diffImpShare);
       reactions_auto = Math.max(0, reactions - diffReactionsShare);
       engagement_auto = Math.max(0, engagement - diffEngagementShare);
-      comentarios_auto = diffComentariosShare;
-      clicks_auto = diffClicksShare;
     } else {
       console.log(`⚠️ Página ${dbId}: no hay acumulado_share del día ${day} o ${dayPrev}, registrando insight total sin restar`);
     }
@@ -465,8 +456,7 @@ async function main() {
       frecuencia: frecuenciaAuto,
       reactions: reactions_auto,
       engagement: engagement_auto,
-      comentarios: comentarios_auto,
-      clicks: clicks_auto,
+      vistas_perfil: vistas_perfil,
       impresiones_days_28: days28Dia,
     });
 
@@ -478,8 +468,7 @@ async function main() {
         impresiones_unicas_dia,
         reactions_auto,
         engagement_auto,
-        comentarios_auto,
-        clicks_auto,
+        vistas_perfil,
         share,
         impresiones_days_28: days28Dia,
       });
