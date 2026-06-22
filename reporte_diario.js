@@ -28,12 +28,6 @@ function nextDay(dateStr) {
   return d.toISOString().split("T")[0];
 }
 
-function prevDay(dateStr) {
-  const d = new Date(dateStr + "T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() - 1);
-  return d.toISOString().split("T")[0];
-}
-
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -179,7 +173,6 @@ async function getAcumuladoTodosLosPosts(pageId, token) {
       const postId = posts[i];
       console.log(`🔄 Procesando post ${i + 1}/${posts.length}: ${postId}`);
 
-      // ✅ Impresiones totales + únicas
       try {
         const res1 = await axios.get(
           `https://graph.facebook.com/v21.0/${postId}/insights`,
@@ -201,12 +194,10 @@ async function getAcumuladoTodosLosPosts(pageId, token) {
       }
       await sleep(200);
 
-      // ✅ Clicks
       const clicks = await getClicksPost(postId, token);
       totalClicks += clicks;
       await sleep(200);
 
-      // ✅ Reactions
       try {
         const res3 = await axios.get(
           `https://graph.facebook.com/v21.0/${postId}`,
@@ -220,7 +211,6 @@ async function getAcumuladoTodosLosPosts(pageId, token) {
       }
       await sleep(200);
 
-      // ✅ Comentarios
       const comentarios = await getComentariosPost(postId, token);
       totalComentarios += comentarios;
       await sleep(200);
@@ -326,10 +316,9 @@ async function main() {
 
   const hoy = getTodayCuba();
   const day = getYesterdayCuba();
-  const dayPrev = prevDay(day);
   const until = nextDay(day);
 
-  console.log(`📅 Procesando solo el día: ${day}`);
+  console.log(`📅 Procesando solo el día: ${day} (hoy=${hoy})`);
 
   for (const page of pages) {
     const fbId = page.id_page;
@@ -351,14 +340,14 @@ async function main() {
     }
 
     // ✅ PASO 1: Guardar insights_acumulado_share de HOY (siempre primero)
-    const { data: acumuladoShareHoy } = await supabase
+    const { data: acumuladoShareHoyExiste } = await supabase
       .from("insights_acumulado_share")
       .select("id_record")
       .eq("id_pagina", dbId)
       .eq("fecha", hoy)
       .maybeSingle();
 
-    if (!acumuladoShareHoy) {
+    if (!acumuladoShareHoyExiste) {
       const acShare = await getAcumuladoTodosLosPosts(fbId, token);
       await sleep(500);
 
@@ -436,18 +425,19 @@ async function main() {
     const days28Dia = await getDays28(fbId, token, day);
     await sleep(300);
 
-    const { data: acShareDia } = await supabase
+    // ✅ FIX: comparar acumulado de HOY vs acumulado de AYER (el día que estamos calculando)
+    const { data: acShareHoy } = await supabase
+      .from("insights_acumulado_share")
+      .select("share, impresiones, reactions, engagement")
+      .eq("id_pagina", dbId)
+      .eq("fecha", hoy)
+      .maybeSingle();
+
+    const { data: acShareAyer } = await supabase
       .from("insights_acumulado_share")
       .select("share, impresiones, reactions, engagement")
       .eq("id_pagina", dbId)
       .eq("fecha", day)
-      .maybeSingle();
-
-    const { data: acShareDiaAnterior } = await supabase
-      .from("insights_acumulado_share")
-      .select("share, impresiones, reactions, engagement")
-      .eq("id_pagina", dbId)
-      .eq("fecha", dayPrev)
       .maybeSingle();
 
     let share = 0;
@@ -455,18 +445,20 @@ async function main() {
     let reactions_auto = reactions;
     let engagement_auto = engagement;
 
-    if (acShareDia && acShareDiaAnterior) {
-      share = Math.max(0, acShareDia.share - acShareDiaAnterior.share);
+    if (acShareHoy && acShareAyer) {
+      share = Math.max(0, acShareHoy.share - acShareAyer.share);
 
-      const diffImpShare = Math.max(0, acShareDia.impresiones - acShareDiaAnterior.impresiones);
-      const diffReactionsShare = Math.max(0, acShareDia.reactions - acShareDiaAnterior.reactions);
-      const diffEngagementShare = Math.max(0, acShareDia.engagement - acShareDiaAnterior.engagement);
+      const diffImpShare = Math.max(0, acShareHoy.impresiones - acShareAyer.impresiones);
+      const diffReactionsShare = Math.max(0, acShareHoy.reactions - acShareAyer.reactions);
+      const diffEngagementShare = Math.max(0, acShareHoy.engagement - acShareAyer.engagement);
 
       impresiones_auto = Math.max(0, impresiones - diffImpShare);
       reactions_auto = Math.max(0, reactions - diffReactionsShare);
       engagement_auto = Math.max(0, engagement - diffEngagementShare);
+
+      console.log(`   🔢 Diferencia acumulado_share: imp=${diffImpShare} react=${diffReactionsShare} eng=${diffEngagementShare} share=${share}`);
     } else {
-      console.log(`⚠️ Página ${dbId}: no hay acumulado_share del día ${day} o ${dayPrev}, registrando insight total sin restar`);
+      console.log(`⚠️ Página ${dbId}: no hay acumulado_share de ${hoy} o ${day}, registrando insight total sin restar`);
     }
 
     const frecuenciaAuto = impresiones_unicas_dia > 0
