@@ -105,7 +105,6 @@ async function getDays28(pageId, token, day, retries = 3) {
   return 0;
 }
 
-// ✅ Obtener comentarios de UN post específico
 async function getComentariosPost(postId, token) {
   try {
     const res = await axios.get(
@@ -121,7 +120,6 @@ async function getComentariosPost(postId, token) {
   }
 }
 
-// ✅ Obtener clicks de UN post específico
 async function getClicksPost(postId, token) {
   try {
     const res = await axios.get(
@@ -142,7 +140,6 @@ async function getClicksPost(postId, token) {
   }
 }
 
-// ✅ Acumulado de TODOS los posts de la página
 async function getAcumuladoTodosLosPosts(pageId, token) {
   let url = `https://graph.facebook.com/v21.0/${pageId}/posts`;
   let totalShare = 0;
@@ -215,7 +212,7 @@ async function getAcumuladoTodosLosPosts(pageId, token) {
       totalComentarios += comentarios;
       await sleep(200);
 
-      console.log(`   ➡️ Acumulado parcial: imp=${totalImpresiones} clicks=${totalClicks} comentarios=${totalComentarios}`);
+      console.log(`   ➡️ Acumulado parcial: imp=${totalImpresiones} imp_unicas=${totalImpresionesUnicas} clicks=${totalClicks} comentarios=${totalComentarios}`);
     }
   } catch (err) {
     console.log("❌ ACUMULADO TODOS POSTS ERROR:", err.response?.data?.error?.message || err.message);
@@ -235,7 +232,6 @@ async function getAcumuladoTodosLosPosts(pageId, token) {
   };
 }
 
-// ✅ Acumulado solo de posts en comercial_post_community_paginas con activo=true
 async function getAcumuladoPostsComunidad(dbPageId, token) {
   const { data: posts } = await supabase
     .from("comercial_post_community_paginas")
@@ -425,23 +421,24 @@ async function main() {
     const days28Dia = await getDays28(fbId, token, day);
     await sleep(300);
 
-    // ✅ FIX: comparar acumulado de HOY vs acumulado de AYER (el día que estamos calculando)
+    // ✅ Comparar acumulado de HOY vs acumulado de AYER (el día que estamos calculando)
     const { data: acShareHoy } = await supabase
       .from("insights_acumulado_share")
-      .select("share, impresiones, reactions, engagement")
+      .select("share, impresiones, impresiones_unicas, reactions, engagement")
       .eq("id_pagina", dbId)
       .eq("fecha", hoy)
       .maybeSingle();
 
     const { data: acShareAyer } = await supabase
       .from("insights_acumulado_share")
-      .select("share, impresiones, reactions, engagement")
+      .select("share, impresiones, impresiones_unicas, reactions, engagement")
       .eq("id_pagina", dbId)
       .eq("fecha", day)
       .maybeSingle();
 
     let share = 0;
     let impresiones_auto = impresiones;
+    let impresiones_unicas_auto = impresiones_unicas_dia;
     let reactions_auto = reactions;
     let engagement_auto = engagement;
 
@@ -449,20 +446,22 @@ async function main() {
       share = Math.max(0, acShareHoy.share - acShareAyer.share);
 
       const diffImpShare = Math.max(0, acShareHoy.impresiones - acShareAyer.impresiones);
+      const diffImpUnicasShare = Math.max(0, acShareHoy.impresiones_unicas - acShareAyer.impresiones_unicas);
       const diffReactionsShare = Math.max(0, acShareHoy.reactions - acShareAyer.reactions);
       const diffEngagementShare = Math.max(0, acShareHoy.engagement - acShareAyer.engagement);
 
       impresiones_auto = Math.max(0, impresiones - diffImpShare);
+      impresiones_unicas_auto = Math.max(0, impresiones_unicas_dia - diffImpUnicasShare);
       reactions_auto = Math.max(0, reactions - diffReactionsShare);
       engagement_auto = Math.max(0, engagement - diffEngagementShare);
 
-      console.log(`   🔢 Diferencia acumulado_share: imp=${diffImpShare} react=${diffReactionsShare} eng=${diffEngagementShare} share=${share}`);
+      console.log(`   🔢 Diferencia acumulado_share: imp=${diffImpShare} imp_unicas=${diffImpUnicasShare} react=${diffReactionsShare} eng=${diffEngagementShare} share=${share}`);
     } else {
       console.log(`⚠️ Página ${dbId}: no hay acumulado_share de ${hoy} o ${day}, registrando insight total sin restar`);
     }
 
-    const frecuenciaAuto = impresiones_unicas_dia > 0
-      ? Math.round((impresiones_auto / impresiones_unicas_dia) * 100) / 100
+    const frecuenciaAuto = impresiones_unicas_auto > 0
+      ? Math.round((impresiones_auto / impresiones_unicas_auto) * 100) / 100
       : 0;
 
     const { error } = await supabase.from("insights_diario_groups_auto_post").insert({
@@ -470,7 +469,7 @@ async function main() {
       fecha: day,
       total_auto_post: share,
       impresiones: impresiones_auto,
-      impresiones_unicas: impresiones_unicas_dia,
+      impresiones_unicas: impresiones_unicas_auto,
       frecuencia: frecuenciaAuto,
       reactions: reactions_auto,
       engagement: engagement_auto,
@@ -483,7 +482,7 @@ async function main() {
     } else {
       console.log(`✅ OK ${dbId} → ${day}`, {
         impresiones_auto,
-        impresiones_unicas_dia,
+        impresiones_unicas_auto,
         reactions_auto,
         engagement_auto,
         vistas_perfil,
@@ -495,7 +494,6 @@ async function main() {
     await sleep(300);
   }
 
-  // ✅ Registrar log en system_logs al finalizar
   await registrarLogSistema(hoy);
 
   console.log("🎉 Completado.");
