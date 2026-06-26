@@ -111,9 +111,7 @@ async function getComentariosPost(postId, token) {
       `https://graph.facebook.com/v21.0/${postId}`,
       { params: { fields: "comments.summary(true).limit(0)", access_token: token } }
     );
-    const total = res.data?.comments?.summary?.total_count || 0;
-    console.log(`   💬 Post ${postId} → comentarios: ${total}`);
-    return total;
+    return res.data?.comments?.summary?.total_count || 0;
   } catch (err) {
     console.log(`   ⚠️ Error comentarios post ${postId}:`, err.response?.data?.error?.message || err.message);
     return 0;
@@ -132,11 +130,24 @@ async function getClicksPost(postId, token) {
         clicks = Number(metric.values?.[0]?.value) || 0;
       }
     }
-    console.log(`   🖱️ Post ${postId} → clicks: ${clicks}`);
     return clicks;
   } catch (err) {
     console.log(`   ⚠️ Error clicks post ${postId}:`, err.response?.data?.error?.message || err.message);
     return 0;
+  }
+}
+
+// ✅ Obtener seguidores actuales de una página
+async function getSeguidoresPagina(pageId, token) {
+  try {
+    const res = await axios.get(
+      `https://graph.facebook.com/v21.0/${pageId}`,
+      { params: { fields: "followers_count", access_token: token } }
+    );
+    return res.data?.followers_count || 0;
+  } catch (err) {
+    console.log(`⚠️ Error obteniendo seguidores página ${pageId}:`, err.response?.data?.error?.message || err.message);
+    return null;
   }
 }
 
@@ -168,7 +179,6 @@ async function getAcumuladoTodosLosPosts(pageId, token) {
 
     for (let i = 0; i < posts.length; i++) {
       const postId = posts[i];
-      console.log(`🔄 Procesando post ${i + 1}/${posts.length}: ${postId}`);
 
       try {
         const res1 = await axios.get(
@@ -185,7 +195,6 @@ async function getAcumuladoTodosLosPosts(pageId, token) {
         }
         totalImpresiones += impPost;
         totalImpresionesUnicas += impUnicasPost;
-        console.log(`   📊 Post ${postId} → imp: ${impPost}, imp_unicas: ${impUnicasPost}`);
       } catch (err) {
         console.log(`   ⚠️ Error impresiones post ${postId}:`, err.response?.data?.error?.message || err.message);
       }
@@ -200,9 +209,7 @@ async function getAcumuladoTodosLosPosts(pageId, token) {
           `https://graph.facebook.com/v21.0/${postId}`,
           { params: { fields: "reactions.summary(true)", access_token: token } }
         );
-        const react = res3.data?.reactions?.summary?.total_count || 0;
-        totalReactions += react;
-        console.log(`   ❤️ Post ${postId} → reactions: ${react}`);
+        totalReactions += res3.data?.reactions?.summary?.total_count || 0;
       } catch (err) {
         console.log(`   ⚠️ Error reactions post ${postId}:`, err.response?.data?.error?.message || err.message);
       }
@@ -211,8 +218,6 @@ async function getAcumuladoTodosLosPosts(pageId, token) {
       const comentarios = await getComentariosPost(postId, token);
       totalComentarios += comentarios;
       await sleep(200);
-
-      console.log(`   ➡️ Acumulado parcial: imp=${totalImpresiones} imp_unicas=${totalImpresionesUnicas} clicks=${totalClicks} comentarios=${totalComentarios}`);
     }
   } catch (err) {
     console.log("❌ ACUMULADO TODOS POSTS ERROR:", err.response?.data?.error?.message || err.message);
@@ -401,99 +406,138 @@ async function main() {
       .eq("fecha", day)
       .maybeSingle();
 
-    if (diarioAutoExiste) {
+    if (!diarioAutoExiste) {
+      console.log(`📊 Procesando insights del día ${day} para página ${dbId}`);
+
+      const impresiones = await getMetric(fbId, token, "page_media_view", day, until);
+      await sleep(300);
+      const impresiones_unicas_dia = await getMetric(fbId, token, "page_total_media_view_unique", day, until);
+      await sleep(300);
+      const reactions = await getMetric(fbId, token, "page_actions_post_reactions_total", day, until);
+      await sleep(300);
+      const engagement = await getMetric(fbId, token, "page_post_engagements", day, until);
+      await sleep(300);
+      const vistas_perfil = await getMetric(fbId, token, "page_views_total", day, until);
+      await sleep(300);
+      const days28Dia = await getDays28(fbId, token, day);
+      await sleep(300);
+
+      const { data: acShareHoy } = await supabase
+        .from("insights_acumulado_share")
+        .select("share, impresiones, impresiones_unicas, reactions, engagement")
+        .eq("id_pagina", dbId)
+        .eq("fecha", hoy)
+        .maybeSingle();
+
+      const { data: acShareAyer } = await supabase
+        .from("insights_acumulado_share")
+        .select("share, impresiones, impresiones_unicas, reactions, engagement")
+        .eq("id_pagina", dbId)
+        .eq("fecha", day)
+        .maybeSingle();
+
+      let share = 0;
+      let impresiones_auto = impresiones;
+      let impresiones_unicas_auto = impresiones_unicas_dia;
+      let reactions_auto = reactions;
+      let engagement_auto = engagement;
+
+      if (acShareHoy && acShareAyer) {
+        share = Math.max(0, acShareHoy.share - acShareAyer.share);
+
+        const diffImpShare = Math.max(0, acShareHoy.impresiones - acShareAyer.impresiones);
+        const diffImpUnicasShare = Math.max(0, acShareHoy.impresiones_unicas - acShareAyer.impresiones_unicas);
+        const diffReactionsShare = Math.max(0, acShareHoy.reactions - acShareAyer.reactions);
+        const diffEngagementShare = Math.max(0, acShareHoy.engagement - acShareAyer.engagement);
+
+        impresiones_auto = Math.max(0, impresiones - diffImpShare);
+        impresiones_unicas_auto = Math.max(0, impresiones_unicas_dia - diffImpUnicasShare);
+        reactions_auto = Math.max(0, reactions - diffReactionsShare);
+        engagement_auto = Math.max(0, engagement - diffEngagementShare);
+      } else {
+        console.log(`⚠️ Página ${dbId}: no hay acumulado_share de ${hoy} o ${day}, registrando insight total sin restar`);
+      }
+
+      const frecuenciaAuto = impresiones_unicas_auto > 0
+        ? Math.round((impresiones_auto / impresiones_unicas_auto) * 100) / 100
+        : 0;
+
+      const { error } = await supabase.from("insights_diario_groups_auto_post").insert({
+        id_pagina: dbId,
+        fecha: day,
+        total_auto_post: share,
+        impresiones: impresiones_auto,
+        impresiones_unicas: impresiones_unicas_auto,
+        frecuencia: frecuenciaAuto,
+        reactions: reactions_auto,
+        engagement: engagement_auto,
+        vistas_perfil: vistas_perfil,
+        impresiones_days_28: days28Dia,
+      });
+
+      if (error) {
+        console.log(`❌ INSERT ERROR ${dbId} → ${day}:`, error.message);
+      } else {
+        console.log(`✅ OK ${dbId} → ${day}`);
+      }
+
+      await sleep(300);
+    } else {
       console.log(`✅ Página ${dbId} ya tiene insights_diario_groups_auto_post del día ${day}`);
-      continue;
     }
 
-    console.log(`📊 Procesando insights del día ${day} para página ${dbId}`);
-
-    const impresiones = await getMetric(fbId, token, "page_media_view", day, until);
-    await sleep(300);
-    const impresiones_unicas_dia = await getMetric(fbId, token, "page_total_media_view_unique", day, until);
-    await sleep(300);
-    const reactions = await getMetric(fbId, token, "page_actions_post_reactions_total", day, until);
-    await sleep(300);
-    const engagement = await getMetric(fbId, token, "page_post_engagements", day, until);
-    await sleep(300);
-    const vistas_perfil = await getMetric(fbId, token, "page_views_total", day, until);
-    await sleep(300);
-    const days28Dia = await getDays28(fbId, token, day);
-    await sleep(300);
-
-    // ✅ Comparar acumulado de HOY vs acumulado de AYER (el día que estamos calculando)
-    const { data: acShareHoy } = await supabase
-      .from("insights_acumulado_share")
-      .select("share, impresiones, impresiones_unicas, reactions, engagement")
+    // ✅ PASO 4: Registrar seguidores actuales de la página
+    const { data: seguidoresHoyExiste } = await supabase
+      .from("insights_crecimiento_acumulado_paginas")
+      .select("id")
       .eq("id_pagina", dbId)
       .eq("fecha", hoy)
       .maybeSingle();
 
-    const { data: acShareAyer } = await supabase
-      .from("insights_acumulado_share")
-      .select("share, impresiones, impresiones_unicas, reactions, engagement")
-      .eq("id_pagina", dbId)
-      .eq("fecha", day)
-      .maybeSingle();
-
-    let share = 0;
-    let impresiones_auto = impresiones;
-    let impresiones_unicas_auto = impresiones_unicas_dia;
-    let reactions_auto = reactions;
-    let engagement_auto = engagement;
-
-    if (acShareHoy && acShareAyer) {
-      share = Math.max(0, acShareHoy.share - acShareAyer.share);
-
-      const diffImpShare = Math.max(0, acShareHoy.impresiones - acShareAyer.impresiones);
-      const diffImpUnicasShare = Math.max(0, acShareHoy.impresiones_unicas - acShareAyer.impresiones_unicas);
-      const diffReactionsShare = Math.max(0, acShareHoy.reactions - acShareAyer.reactions);
-      const diffEngagementShare = Math.max(0, acShareHoy.engagement - acShareAyer.engagement);
-
-      impresiones_auto = Math.max(0, impresiones - diffImpShare);
-      impresiones_unicas_auto = Math.max(0, impresiones_unicas_dia - diffImpUnicasShare);
-      reactions_auto = Math.max(0, reactions - diffReactionsShare);
-      engagement_auto = Math.max(0, engagement - diffEngagementShare);
-
-      console.log(`   🔢 Diferencia acumulado_share: imp=${diffImpShare} imp_unicas=${diffImpUnicasShare} react=${diffReactionsShare} eng=${diffEngagementShare} share=${share}`);
+    if (!seguidoresHoyExiste) {
+      const seguidores = await getSeguidoresPagina(fbId, token);
+      if (seguidores !== null) {
+        await supabase.from("insights_crecimiento_acumulado_paginas").insert({
+          id_pagina: dbId,
+          fecha: hoy,
+          seguidores: seguidores,
+        });
+        console.log(`👥 Seguidores guardados: página ${dbId} → ${hoy}: ${seguidores}`);
+      }
+      await sleep(200);
     } else {
-      console.log(`⚠️ Página ${dbId}: no hay acumulado_share de ${hoy} o ${day}, registrando insight total sin restar`);
+      console.log(`✅ Seguidores ya registrados: página ${dbId} → ${hoy}`);
     }
-
-    const frecuenciaAuto = impresiones_unicas_auto > 0
-      ? Math.round((impresiones_auto / impresiones_unicas_auto) * 100) / 100
-      : 0;
-
-    const { error } = await supabase.from("insights_diario_groups_auto_post").insert({
-      id_pagina: dbId,
-      fecha: day,
-      total_auto_post: share,
-      impresiones: impresiones_auto,
-      impresiones_unicas: impresiones_unicas_auto,
-      frecuencia: frecuenciaAuto,
-      reactions: reactions_auto,
-      engagement: engagement_auto,
-      vistas_perfil: vistas_perfil,
-      impresiones_days_28: days28Dia,
-    });
-
-    if (error) {
-      console.log(`❌ INSERT ERROR ${dbId} → ${day}:`, error.message);
-    } else {
-      console.log(`✅ OK ${dbId} → ${day}`, {
-        impresiones_auto,
-        impresiones_unicas_auto,
-        reactions_auto,
-        engagement_auto,
-        vistas_perfil,
-        share,
-        impresiones_days_28: days28Dia,
-      });
-    }
-
-    await sleep(300);
   }
 
+  // ✅ PASO 5: Registrar suscriptores de canales de Telegram
+  const { data: channels } = await supabase
+    .from("community-channels")
+    .select("id, suscriptores");
+
+  if (channels?.length) {
+    for (const channel of channels) {
+      const { data: suscriptoresHoyExiste } = await supabase
+        .from("insights_crecimiento_acumulado_channels")
+        .select("id")
+        .eq("id_channel", channel.id)
+        .eq("fecha", hoy)
+        .maybeSingle();
+
+      if (!suscriptoresHoyExiste) {
+        await supabase.from("insights_crecimiento_acumulado_channels").insert({
+          id_channel: channel.id,
+          fecha: hoy,
+          suscriptores: channel.suscriptores,
+        });
+        console.log(`📣 Suscriptores guardados: canal ${channel.id} → ${hoy}: ${channel.suscriptores}`);
+      } else {
+        console.log(`✅ Suscriptores ya registrados: canal ${channel.id} → ${hoy}`);
+      }
+    }
+  }
+
+  // ✅ Registrar log en system_logs al finalizar
   await registrarLogSistema(hoy);
 
   console.log("🎉 Completado.");
