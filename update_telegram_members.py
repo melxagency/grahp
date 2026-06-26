@@ -115,7 +115,8 @@ async def update_groups():
     # ====================================
     supabase.table("system_logs").insert({
         "clasificacion": 1,
-        "descripcion": "Actualizacion automatica de insight miembros community_usuarios",
+        "modulo": 1,
+        "descripcion": "Actualizacion automatica de insight miembros community_groups (Telegram)",
         "fecha": today,
     }).execute()
     print("📝 Log registrado en system_logs")
