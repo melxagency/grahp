@@ -1,4 +1,4 @@
-name: Actualizar Miembros Community_Groups
+name: Actualizar Miembros (Facebook + Telegram)
 
 on:
   workflow_dispatch:
@@ -174,7 +174,7 @@ jobs:
             -H "Authorization: Bearer ${SUPABASE_KEY}" \
             -H "Content-Type: application/json" \
             -H "Prefer: return=representation" \
-            -d "{\"clasificacion\": 1, \"descripcion\": \"Actualizacion automatica de insight miembros community_usuarios\", \"fecha\": \"${TODAY}\"}"
+            -d "{\"clasificacion\": 1, \"modulo\": 1, \"descripcion\": \"Actualizacion automatica de insight miembros community_groups (Facebook)\", \"fecha\": \"${TODAY}\"}"
           echo "Log registrado en system_logs"
 
   # ===========================================================
