@@ -488,7 +488,7 @@ async function main() {
         continue;
       }
 
-      // ✅ PASO 1: Guardar insights_acumulado_share de HOY
+      // ✅ PASO 1: Guardar insights_acumulado_share_facebook de HOY
       const { data: acumuladoShareHoyExiste } = await supabase
         .from("insights_acumulado_share")
         .select("id_record")
@@ -513,9 +513,9 @@ async function main() {
           clicks: acShare.totalClicks,
           impresiones_days_28: await getDays28(fbId, token, hoy),
         });
-        console.log(`📦 insights_acumulado_share guardado: página ${dbId} → ${hoy}`);
+        console.log(`📦 insights_acumulado_share_facebook guardado: página ${dbId} → ${hoy}`);
       } else {
-        console.log(`✅ insights_acumulado_share ya existe: página ${dbId} → ${hoy}`);
+        console.log(`✅ insights_acumulado_share_facebook ya existe: página ${dbId} → ${hoy}`);
       }
 
       // ✅ PASO 2: Guardar insights_acumulado_post_community_paginas de HOY
