@@ -1,4 +1,4 @@
-name: Actualizar Community y Reporte Diario (Facebook + Telegram)
+name: Community y Reportes
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ jobs:
   # ===========================================================
   # JOB 1 - FACEBOOK (community_groups.red_social = 2)
   # ===========================================================
-  update-facebook-members:
+  update-facebook-community:
     runs-on: ubuntu-latest
 
     steps:
@@ -180,8 +180,8 @@ jobs:
   # ===========================================================
   # JOB 2 - TELEGRAM (community_groups.red_social = 1)
   # ===========================================================
-  update-telegram-members:
-    needs: update-facebook-members
+  update-telegram-community:
+    needs: update-facebook-community
     runs-on: ubuntu-latest
 
     steps:
@@ -223,13 +223,13 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          python update_telegram_members.py
+          python update_telegram_community.py
 
   # ===========================================================
   # JOB 3 - REPORTE DIARIO FACEBOOK
   # ===========================================================
-  reporte-diario-facebook:
-    needs: update-facebook-members
+  reportes-facebook:
+    needs: update-facebook-community
     runs-on: ubuntu-latest
 
     steps:
@@ -253,8 +253,8 @@ jobs:
   # ===========================================================
   # JOB 4 - REPORTE DIARIO TELEGRAM
   # ===========================================================
-  reporte-diario-telegram:
-    needs: update-telegram-members
+  reportes-telegram:
+    needs: update-telegram-community
     runs-on: ubuntu-latest
 
     steps:
