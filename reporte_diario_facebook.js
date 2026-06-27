@@ -518,9 +518,9 @@ async function main() {
         console.log(`✅ insights_acumulado_share_facebook ya existe: página ${dbId} → ${hoy}`);
       }
 
-      // ✅ PASO 2: Guardar insights_acumulado_post_community_paginas de HOY
+      // ✅ PASO 2: Guardar insights_acumulado_post_community_paginas_facebook de HOY
       const { data: acumuladoPostComHoy } = await supabase
-        .from("insights_acumulado_post_community_paginas")
+        .from("insights_acumulado_post_community_paginas_facebook")
         .select("id")
         .eq("id_pagina", dbId)
         .eq("fecha", hoy)
@@ -530,7 +530,7 @@ async function main() {
         const acPostCom = await getAcumuladoPostsComunidad(dbId, token);
         await sleep(500);
 
-        await supabase.from("insights_acumulado_post_community_paginas").insert({
+        await supabase.from("insights_acumulado_post_community_paginas_facebook").insert({
           id_pagina: dbId,
           fecha: hoy,
           total_auto_post: acPostCom.totalAutoPost,
@@ -541,9 +541,9 @@ async function main() {
           engagement: acPostCom.totalEngagement,
           impresiones_days_28: await getDays28(fbId, token, hoy),
         });
-        console.log(`📦 insights_acumulado_post_community_paginas guardado: página ${dbId} → ${hoy}`);
+        console.log(`📦 insights_acumulado_post_community_paginas_facebook guardado: página ${dbId} → ${hoy}`);
       } else {
-        console.log(`✅ insights_acumulado_post_community_paginas ya existe: página ${dbId} → ${hoy}`);
+        console.log(`✅ insights_acumulado_post_community_paginas_facebook ya existe: página ${dbId} → ${hoy}`);
       }
 
       // ✅ PASO 3: insights_diario_groups_auto_post de AYER
