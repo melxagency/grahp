@@ -486,22 +486,30 @@ async function main() {
     }
 
     // ✅ PASO 4: Registrar seguidores actuales de la página
+    // ⚠️ IMPORTANTE: id_pagina aquí referencia community_paginas(id_page), por eso usamos fbId, no dbId
     const { data: seguidoresHoyExiste } = await supabase
       .from("insights_crecimiento_acumulado_paginas")
       .select("id")
-      .eq("id_pagina", dbId)
+      .eq("id_pagina", fbId)
       .eq("fecha", hoy)
       .maybeSingle();
 
     if (!seguidoresHoyExiste) {
       const seguidores = await getSeguidoresPagina(fbId, token);
       if (seguidores !== null) {
-        await supabase.from("insights_crecimiento_acumulado_paginas").insert({
-          id_pagina: dbId,
-          fecha: hoy,
-          seguidores: seguidores,
-        });
-        console.log(`👥 Seguidores guardados: página ${dbId} → ${hoy}: ${seguidores}`);
+        const { error: errorSeguidores } = await supabase
+          .from("insights_crecimiento_acumulado_paginas")
+          .insert({
+            id_pagina: fbId,
+            fecha: hoy,
+            seguidores: seguidores,
+          });
+
+        if (errorSeguidores) {
+          console.log(`❌ ERROR insertando seguidores página ${dbId} (${fbId}):`, errorSeguidores.message);
+        } else {
+          console.log(`👥 Seguidores guardados: página ${dbId} → ${hoy}: ${seguidores}`);
+        }
       }
       await sleep(200);
     } else {
