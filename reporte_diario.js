@@ -137,7 +137,6 @@ async function getClicksPost(postId, token) {
   }
 }
 
-// ✅ Obtener seguidores actuales de una página
 async function getSeguidoresPagina(pageId, token) {
   try {
     const res = await axios.get(
@@ -340,7 +339,7 @@ async function main() {
       continue;
     }
 
-    // ✅ PASO 1: Guardar insights_acumulado_share de HOY (siempre primero)
+    // ✅ PASO 1: Guardar insights_acumulado_share de HOY
     const { data: acumuladoShareHoyExiste } = await supabase
       .from("insights_acumulado_share")
       .select("id_record")
@@ -398,7 +397,7 @@ async function main() {
       console.log(`✅ insights_acumulado_post_community_paginas ya existe: página ${dbId} → ${hoy}`);
     }
 
-    // ✅ PASO 3: Verificar si ya se registró insights_diario_groups_auto_post de AYER
+    // ✅ PASO 3: insights_diario_groups_auto_post de AYER
     const { data: diarioAutoExiste } = await supabase
       .from("insights_diario_groups_auto_post")
       .select("id")
@@ -510,34 +509,6 @@ async function main() {
     }
   }
 
-  // ✅ PASO 5: Registrar suscriptores de canales de Telegram
-  const { data: channels } = await supabase
-    .from("community-channels")
-    .select("id, suscriptores");
-
-  if (channels?.length) {
-    for (const channel of channels) {
-      const { data: suscriptoresHoyExiste } = await supabase
-        .from("insights_crecimiento_acumulado_channels")
-        .select("id")
-        .eq("id_channel", channel.id)
-        .eq("fecha", hoy)
-        .maybeSingle();
-
-      if (!suscriptoresHoyExiste) {
-        await supabase.from("insights_crecimiento_acumulado_channels").insert({
-          id_channel: channel.id,
-          fecha: hoy,
-          suscriptores: channel.suscriptores,
-        });
-        console.log(`📣 Suscriptores guardados: canal ${channel.id} → ${hoy}: ${channel.suscriptores}`);
-      } else {
-        console.log(`✅ Suscriptores ya registrados: canal ${channel.id} → ${hoy}`);
-      }
-    }
-  }
-
-  // ✅ Registrar log en system_logs al finalizar
   await registrarLogSistema(hoy);
 
   console.log("🎉 Completado.");
