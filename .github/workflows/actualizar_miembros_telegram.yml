@@ -1,4 +1,4 @@
-name: Miembros Telegram
+name: Reporte Diario Telegram
 
 on:
   workflow_dispatch:
@@ -6,46 +6,28 @@ on:
     - cron: '0 6 * * *'
 
 jobs:
-  update-members:
+  reporte-diario-telegram:
     runs-on: ubuntu-latest
 
     steps:
-      # =========================
-      # 1. CHECKOUT
-      # =========================
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # =========================
-      # 2. PYTHON
-      # =========================
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      # =========================
-      # 3. INSTALL DEPENDENCIES
-      # =========================
       - name: Install dependencies
-        run: |
-          pip install telethon supabase
+        run: pip install telethon supabase --break-system-packages
 
-      # =========================
-      # 4. CREATE SESSION FILE
-      # =========================
       - name: Restore Telegram session
-        run: |
-          echo "${{ secrets.TELEGRAM_SESSION }}" | base64 -d > telegram.session
+        run: echo "${{ secrets.TELEGRAM_SESSION_BASE64 }}" | base64 -d > telegram.session
 
-      # =========================
-      # 5. RUN SCRIPT
-      # =========================
-      - name: Update Telegram Members
+      - name: Run reporte_diario_telegram.py
         env:
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: |
-          python update_members.py
+        run: python reporte_diario_telegram.py
