@@ -1,12 +1,235 @@
-name: Reporte Diario Facebook
+name: Actualizar Community y Reporte Diario (Facebook + Telegram)
 
 on:
   workflow_dispatch:
   schedule:
+    # 1:00 AM hora de Cuba (UTC-4) = 5:00 AM UTC
     - cron: '0 5 * * *'
 
 jobs:
+  # ===========================================================
+  # JOB 1 - FACEBOOK (community_groups.red_social = 2)
+  # ===========================================================
+  update-facebook-members:
+    runs-on: ubuntu-latest
+
+    steps:
+      # =========================
+      # 1. CHECKOUT
+      # =========================
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # =========================
+      # 2. INSTALL TOOLS
+      # =========================
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      # =========================
+      # 3. FETCH GROUPS (red_social = 2 -> Facebook)
+      # =========================
+      # community_groups.id_group tiene relacion directa con
+      # insights_crecimiento_acumulado_groups.id_group.
+      - name: Fetch Group IDs from Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          echo "Fetching group IDs (red_social=2)..."
+
+          if [ -z "$SUPABASE_KEY" ]; then
+            echo "ERROR: SUPABASE_KEY vacio"
+            exit 1
+          fi
+
+          RESPONSE=$(curl -s \
+            "${SUPABASE_URL}/rest/v1/community_groups?select=id_group&red_social=eq.2&limit=1000" \
+            -H "apikey: ${SUPABASE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_KEY}" \
+            -H "Content-Type: application/json")
+
+          echo "$RESPONSE" > groups.json
+
+          echo "RAW RESPONSE:"
+          cat groups.json
+
+          if ! echo "$RESPONSE" | jq -e 'type == "array"' > /dev/null; then
+            echo "ERROR: Supabase no devolvio un array valido"
+            exit 1
+          fi
+
+          COUNT_GROUPS=$(jq 'length' groups.json)
+          echo "Grupos encontrados: $COUNT_GROUPS"
+
+      # =========================
+      # 4. FETCH FACEBOOK DATA
+      # =========================
+      - name: Fetch Facebook data
+        env:
+          FACEBOOK_TOKEN: ${{ secrets.FACEBOOK_TOKEN }}
+        run: |
+          echo "Processing Facebook groups..."
+
+          TODAY=$(date -u +%F)
+          echo "Fecha del registro: $TODAY"
+
+          RESULT="[]"
+
+          for row in $(jq -c '.[]' groups.json); do
+
+            GROUP_ID=$(echo "$row" | jq -r '.id_group')
+
+            if [ -z "$GROUP_ID" ] || [ "$GROUP_ID" = "null" ]; then
+              echo "id_group vacio, omitiendo fila"
+              continue
+            fi
+
+            echo "Procesando grupo: $GROUP_ID"
+
+            RESPONSE=$(curl -s \
+              "https://graph.facebook.com/v25.0/${GROUP_ID}?fields=member_count&access_token=${FACEBOOK_TOKEN}")
+
+            echo "FB RESPONSE: $RESPONSE"
+
+            COUNT=$(echo "$RESPONSE" | jq -r '.member_count // empty')
+
+            if [ -z "$COUNT" ] || [ "$COUNT" = "null" ]; then
+              echo "Sin member_count"
+              continue
+            fi
+
+            if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
+              echo "Valor invalido: $COUNT"
+              continue
+            fi
+
+            RESULT=$(echo "$RESULT" | jq \
+              --argjson id "$GROUP_ID" \
+              --argjson count "$COUNT" \
+              --arg fecha "$TODAY" \
+              '. + [{"id_group": $id, "miembros": $count, "fecha": $fecha}]')
+          done
+
+          echo "$RESULT" > insert_payload.json
+
+          echo "PAYLOAD GENERADO:"
+          cat insert_payload.json
+
+      # =========================
+      # 5. INSERT INTO SUPABASE (historico diario)
+      # =========================
+      - name: Insert into insights_crecimiento_acumulado_groups
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          echo "Insertando registro diario de miembros (Facebook)..."
+
+          if [ ! -s insert_payload.json ]; then
+            echo "ERROR: payload vacio"
+            exit 1
+          fi
+
+          ROW_COUNT=$(jq 'length' insert_payload.json)
+
+          if [ "$ROW_COUNT" -eq 0 ]; then
+            echo "No hay filas para insertar"
+            exit 0
+          fi
+
+          echo "Insertando $ROW_COUNT registros en bloque..."
+
+          RESPONSE=$(curl -s -w "\nHTTP: %{http_code}\n" -X POST \
+            "${SUPABASE_URL}/rest/v1/insights_crecimiento_acumulado_groups" \
+            -H "apikey: ${SUPABASE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_KEY}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=representation" \
+            -d @insert_payload.json)
+
+          echo "$RESPONSE"
+
+          if [[ "$RESPONSE" == *"HTTP: 2"* ]]; then
+            echo "Insercion exitosa (Facebook)"
+          else
+            echo "ERROR en la insercion"
+            exit 1
+          fi
+
+          echo "Registro diario de Facebook completado"
+
+      # =========================
+      # 6. LOG EN system_logs
+      # =========================
+      - name: Registrar log en system_logs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          TODAY=$(date -u +%F)
+          curl -s -X POST \
+            "${SUPABASE_URL}/rest/v1/system_logs" \
+            -H "apikey: ${SUPABASE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_KEY}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=representation" \
+            -d "{\"clasificacion\": 1, \"modulo\": 1, \"descripcion\": \"Actualizacion automatica de insight miembros community_groups (Facebook)\", \"fecha\": \"${TODAY}\"}"
+          echo "Log registrado en system_logs"
+
+  # ===========================================================
+  # JOB 2 - TELEGRAM (community_groups.red_social = 1)
+  # ===========================================================
+  update-telegram-members:
+    needs: update-facebook-members
+    runs-on: ubuntu-latest
+
+    steps:
+      # =========================
+      # 1. CHECKOUT
+      # =========================
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # =========================
+      # 2. PYTHON
+      # =========================
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # =========================
+      # 3. INSTALL DEPENDENCIES
+      # =========================
+      - name: Install dependencies
+        run: |
+          pip install telethon supabase
+
+      # =========================
+      # 4. CREATE SESSION FILE
+      # =========================
+      - name: Restore Telegram session
+        run: |
+          echo "${{ secrets.TELEGRAM_SESSION }}" | base64 -d > telegram.session
+
+      # =========================
+      # 5. RUN SCRIPT
+      # =========================
+      - name: Update Telegram Members
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python update_telegram_members.py
+
+  # ===========================================================
+  # JOB 3 - REPORTE DIARIO FACEBOOK
+  # ===========================================================
   reporte-diario-facebook:
+    needs: update-facebook-members
     runs-on: ubuntu-latest
 
     steps:
@@ -26,3 +249,33 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: node reporte_diario_facebook.js
+
+  # ===========================================================
+  # JOB 4 - REPORTE DIARIO TELEGRAM
+  # ===========================================================
+  reporte-diario-telegram:
+    needs: update-telegram-members
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install telethon supabase --break-system-packages
+
+      - name: Restore Telegram session
+        run: echo "${{ secrets.TELEGRAM_SESSION }}" | base64 -d > telegram.session
+
+      - name: Run reporte_diario_telegram.py
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python reporte_diario_telegram.py
