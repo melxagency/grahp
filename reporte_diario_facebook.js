@@ -666,7 +666,7 @@ async function main() {
 
       // ✅ PASO 5: Registrar total de mensajes acumulados de la página
       const { data: mensajesHoyExiste } = await supabase
-        .from("insights__acumulado_mensajes_paginas")
+        .from("insights_acumulado_mensajes_paginas_facebook")
         .select("id")
         .eq("id_pagina", fbId)
         .eq("fecha", hoy)
@@ -677,7 +677,7 @@ async function main() {
         await sleep(300);
 
         const { error: errorMensajes } = await supabase
-          .from("insights__acumulado_mensajes_paginas")
+          .from("insights_acumulado_mensajes_paginas_facebook")
           .insert({
             id_pagina: fbId,
             fecha: hoy,
