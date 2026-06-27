@@ -22,7 +22,7 @@ jobs:
         run: pip install telethon supabase --break-system-packages
 
       - name: Restore Telegram session
-        run: echo "${{ secrets.TELEGRAM_SESSION_BASE64 }}" | base64 -d > telegram.session
+        run: echo "${{ secrets.TELEGRAM_SESSION }}" | base64 -d > telegram.session
 
       - name: Run reporte_diario_telegram.py
         env:
