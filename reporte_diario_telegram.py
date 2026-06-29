@@ -15,8 +15,6 @@ supabase = create_client(
     os.getenv("SUPABASE_KEY")
 )
 
-# Cuantos mensajes recientes revisar por canal en cada corrida.
-# Ajustable por variable de entorno si algun canal tiene mucho volumen de posts.
 MENSAJES_POR_CANAL = int(os.getenv("MENSAJES_POR_CANAL", "50"))
 
 
@@ -24,8 +22,8 @@ def get_today_utc():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
-def get_telegram_paginas():
-    """Obtiene las paginas de Telegram (red_social = 1) desde community_paginas."""
+def get_telegram_channels():
+    """Obtiene los channels de Telegram (red_social = 1) desde community_paginas."""
     response = supabase.table("community_paginas") \
         .select("id,nombre,link") \
         .eq("red_social", 1) \
@@ -35,8 +33,8 @@ def get_telegram_paginas():
 
 
 def get_post_ids_registrados(pagina_id):
-    """Set de post_id ya registrados en services_registro_post_paginas para esta pagina."""
-    response = supabase.table("services_registro_post_paginas") \
+    """Set de post_id ya registrados en services_registro_post_channels para este channel."""
+    response = supabase.table("services_registro_post_channels") \
         .select("post_id") \
         .eq("pagina", pagina_id) \
         .execute()
@@ -44,8 +42,8 @@ def get_post_ids_registrados(pagina_id):
 
 
 def registrar_nuevo_post(pagina_id, post_id, fecha):
-    """Inserta un post nuevo detectado en services_registro_post_paginas."""
-    supabase.table("services_registro_post_paginas").insert({
+    """Inserta un post nuevo detectado en services_registro_post_channels."""
+    supabase.table("services_registro_post_channels").insert({
         "pagina": pagina_id,
         "fecha_inicio": fecha,
         "post_id": post_id,
@@ -54,21 +52,21 @@ def registrar_nuevo_post(pagina_id, post_id, fecha):
     }).execute()
 
 
-async def procesar_pagina(pagina, today, insights_payload):
-    nombre = pagina["nombre"]
-    link = pagina.get("link")
-    pagina_id = pagina["id"]
+async def procesar_channel(channel, today, insights_payload):
+    nombre = channel["nombre"]
+    link = channel.get("link")
+    pagina_id = channel["id"]
 
     if not link:
         print(f"⚠️ {nombre} (id={pagina_id}) sin link, omitiendo")
         return
 
-    print(f"\n➡️ Procesando canal: {nombre} ({link})")
+    print(f"\n➡️ Procesando channel: {nombre} ({link})")
 
     try:
         entity = await client.get_entity(link)
     except Exception as e:
-        print(f"❌ No se pudo obtener el canal {nombre}: {e}")
+        print(f"❌ No se pudo obtener el channel {nombre}: {e}")
         return
 
     registrados = get_post_ids_registrados(pagina_id)
@@ -76,7 +74,7 @@ async def procesar_pagina(pagina, today, insights_payload):
     revisados = 0
 
     async for mensaje in client.iter_messages(entity, limit=MENSAJES_POR_CANAL):
-        # Solo interesan publicaciones reales del canal (tienen "views")
+        # Solo publicaciones reales del canal (tienen "views")
         if mensaje.views is None:
             continue
 
@@ -106,18 +104,18 @@ async def main():
 
     await client.start()
 
-    print("📡 Buscando paginas de Telegram (red_social=1) en community_paginas...")
-    paginas = get_telegram_paginas()
-    print(f"✅ {len(paginas)} paginas encontradas")
+    print("📡 Buscando channels de Telegram (red_social=1) en community_paginas...")
+    channels = get_telegram_channels()
+    print(f"✅ {len(channels)} channels encontrados")
 
     insights_payload = []
 
-    for pagina in paginas:
-        await procesar_pagina(pagina, today, insights_payload)
+    for channel in channels:
+        await procesar_channel(channel, today, insights_payload)
 
     if insights_payload:
-        print(f"\n🚀 Insertando {len(insights_payload)} registros en insights_acumulado_post_community_paginas_telegram...")
-        result = supabase.table("insights_acumulado_post_community_paginas_telegram") \
+        print(f"\n🚀 Insertando {len(insights_payload)} registros en insights_acumulado_post_channel_telegram...")
+        result = supabase.table("insights_acumulado_post_channel_telegram") \
             .insert(insights_payload) \
             .execute()
         print(f"✅ Inserción completada: {len(result.data)} filas")
@@ -127,7 +125,7 @@ async def main():
     supabase.table("system_logs").insert({
         "clasificacion": 1,
         "modulo": 1,
-        "descripcion": "Reporte diario de publicaciones Telegram (vistas y shares)",
+        "descripcion": "Reporte diario de publicaciones Telegram channels (vistas y shares)",
         "fecha": today,
     }).execute()
     print("📝 Log registrado en system_logs")
