@@ -101,7 +101,7 @@ async def update_channels(today):
 
     response = supabase.table("community-channels") \
         .select("id,nombre,link,suscriptores,red_social") \
-        .eq("red_social", "Telegram") \
+        .eq("red_social", 1) \
         .limit(1000) \
         .execute()
 
