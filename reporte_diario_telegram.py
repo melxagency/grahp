@@ -36,7 +36,7 @@ def get_post_ids_registrados(pagina_id):
     """Set de post_id ya registrados en services_registro_post_channels para este channel."""
     response = supabase.table("services_registro_post_channels") \
         .select("post_id") \
-        .eq("pagina", pagina_id) \
+        .eq("channel", pagina_id) \
         .execute()
     return {row["post_id"] for row in response.data}
 
@@ -44,7 +44,7 @@ def get_post_ids_registrados(pagina_id):
 def registrar_nuevo_post(pagina_id, post_id, fecha):
     """Inserta un post nuevo detectado en services_registro_post_channels."""
     supabase.table("services_registro_post_channels").insert({
-        "pagina": pagina_id,
+        "channel": pagina_id,
         "fecha_inicio": fecha,
         "post_id": post_id,
         "activo": True,
