@@ -490,7 +490,7 @@ async function main() {
 
       // ✅ PASO 1: Guardar insights_acumulado_share_facebook de HOY
       const { data: acumuladoShareHoyExiste } = await supabase
-        .from("insights_acumulado_share")
+        .from("insights_acumulado_share_facebook")
         .select("id_record")
         .eq("id_pagina", dbId)
         .eq("fecha", hoy)
@@ -500,7 +500,7 @@ async function main() {
         const acShare = await getAcumuladoTodosLosPosts(fbId, token);
         await sleep(500);
 
-        await supabase.from("insights_acumulado_share").insert({
+        await supabase.from("insights_acumulado_share_facebook").insert({
           id_pagina: dbId,
           fecha: hoy,
           share: acShare.totalShare,
@@ -571,14 +571,14 @@ async function main() {
         await sleep(300);
 
         const { data: acShareHoy } = await supabase
-          .from("insights_acumulado_share")
+          .from("insights_acumulado_share_facebook")
           .select("share, impresiones, impresiones_unicas, reactions, engagement")
           .eq("id_pagina", dbId)
           .eq("fecha", hoy)
           .maybeSingle();
 
         const { data: acShareAyer } = await supabase
-          .from("insights_acumulado_share")
+          .from("insights_acumulado_share_facebook")
           .select("share, impresiones, impresiones_unicas, reactions, engagement")
           .eq("id_pagina", dbId)
           .eq("fecha", day)
