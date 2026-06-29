@@ -546,9 +546,9 @@ async function main() {
         console.log(`✅ insights_acumulado_post_community_paginas_facebook ya existe: página ${dbId} → ${hoy}`);
       }
 
-      // ✅ PASO 3: insights_diario_groups_auto_post de AYER
+      // ✅ PASO 3: insights_diario_groups_auto_post_facebook de AYER
       const { data: diarioAutoExiste } = await supabase
-        .from("insights_diario_groups_auto_post")
+        .from("insights_diario_groups_auto_post_facebook")
         .select("id")
         .eq("id_pagina", dbId)
         .eq("fecha", day)
@@ -610,7 +610,7 @@ async function main() {
           ? Math.round((impresiones_auto / impresiones_unicas_auto) * 100) / 100
           : 0;
 
-        const { error } = await supabase.from("insights_diario_groups_auto_post").insert({
+        const { error } = await supabase.from("insights_diario_groups_auto_post_facebook").insert({
           id_pagina: dbId,
           fecha: day,
           total_auto_post: share,
@@ -631,7 +631,7 @@ async function main() {
 
         await sleep(300);
       } else {
-        console.log(`✅ Página ${dbId} ya tiene insights_diario_groups_auto_post del día ${day}`);
+        console.log(`✅ Página ${dbId} ya tiene insights_diario_groups_auto_post_facebook del día ${day}`);
       }
 
       // ✅ PASO 4: Registrar seguidores actuales de la página
