@@ -150,7 +150,6 @@ async function getSeguidoresPagina(pageId, token) {
   }
 }
 
-// ✅ Obtener total acumulado de mensajes de todas las conversaciones de la página
 async function getTotalMensajesPagina(pageId, token) {
   let url = `https://graph.facebook.com/v21.0/${pageId}/conversations`;
   let totalMensajes = 0;
@@ -334,7 +333,7 @@ async function descubrirYRegistrarPosts(dbPageId, pageId, token, hoy) {
 
   try {
     const { data: postsExistentes } = await supabase
-      .from("services_registro_post_paginas")
+      .from("services_registro_post_community_paginas")
       .select("post_id")
       .eq("pagina", dbPageId);
 
@@ -347,7 +346,7 @@ async function descubrirYRegistrarPosts(dbPageId, pageId, token, hoy) {
 
       for (const post of res.data?.data || []) {
         if (!idsExistentes.has(post.id)) {
-          const { error } = await supabase.from("services_registro_post_paginas").insert({
+          const { error } = await supabase.from("services_registro_post_community_paginas").insert({
             pagina: dbPageId,
             post_id: post.id,
             fecha_inicio: hoy,
@@ -371,10 +370,10 @@ async function descubrirYRegistrarPosts(dbPageId, pageId, token, hoy) {
   return nuevosRegistrados;
 }
 
-// ✅ Registrar insights diarios de cada post activo en services_registro_post_paginas
+// ✅ Registrar insights diarios de cada post activo en services_registro_post_community_paginas
 async function registrarInsightsPostsServices(dbPageId, token, hoy) {
   const { data: posts } = await supabase
-    .from("services_registro_post_paginas")
+    .from("services_registro_post_community_paginas")
     .select("post_id")
     .eq("pagina", dbPageId)
     .eq("activo", true);
