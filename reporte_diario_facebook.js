@@ -5,9 +5,7 @@ const ws = require("ws");
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_KEY,
-  {
-    realtime: { transport: ws },
-  }
+  { realtime: { transport: ws } }
 );
 
 function getTodayCuba() {
@@ -32,19 +30,23 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function registrarLogSistema(fecha) {
+async function registrarLog(descripcion, fecha, modulo = 2) {
   try {
     await supabase.from("system_logs").insert({
       clasificacion: 1,
-      descripcion: "Actualizacion insights",
-      fecha: fecha,
-      modulo: 2,
+      descripcion,
+      fecha,
+      modulo,
     });
-    console.log(`📋 Log registrado en system_logs → ${fecha}`);
+    console.log(`📋 Log: ${descripcion}`);
   } catch (err) {
     console.log("❌ Error registrando log:", err.message);
   }
 }
+
+// ===========================================
+// MÉTRICAS FACEBOOK API
+// ===========================================
 
 async function getMetric(pageId, token, metric, since, until, period = "day", retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -145,7 +147,7 @@ async function getSeguidoresPagina(pageId, token) {
     );
     return res.data?.followers_count || 0;
   } catch (err) {
-    console.log(`⚠️ Error obteniendo seguidores página ${pageId}:`, err.response?.data?.error?.message || err.message);
+    console.log(`⚠️ Error seguidores página ${pageId}:`, err.response?.data?.error?.message || err.message);
     return null;
   }
 }
@@ -157,7 +159,6 @@ async function getTotalMensajesPagina(pageId, token) {
 
   try {
     let params = { fields: "message_count", limit: 100, access_token: token };
-
     while (url) {
       const res = await axios.get(url, { params });
       for (const conv of res.data?.data || []) {
@@ -176,91 +177,126 @@ async function getTotalMensajesPagina(pageId, token) {
   return totalMensajes;
 }
 
-async function getAcumuladoTodosLosPosts(pageId, token) {
+// ===========================================
+// BLOQUE 1 - SHARE: Registrar posts nuevos en services_registro_post_share_fb
+// y calcular acumulado solo sobre esos posts registrados
+// ===========================================
+
+async function descubrirYRegistrarPostsShare(dbPageId, pageId, token, hoy) {
   let url = `https://graph.facebook.com/v21.0/${pageId}/posts`;
-  let totalShare = 0;
-  let totalImpresiones = 0;
-  let totalImpresionesUnicas = 0;
-  let totalReactions = 0;
-  let totalClicks = 0;
-  let totalComentarios = 0;
-  let totalPosts = 0;
+  let nuevosRegistrados = 0;
 
   try {
-    const posts = [];
+    const { data: postsExistentes } = await supabase
+      .from("services_registro_post_share_fb")
+      .select("post_id")
+      .eq("pagina", dbPageId);
+
+    const idsExistentes = new Set((postsExistentes || []).map((p) => p.post_id));
+
     while (url) {
       const res = await axios.get(url, {
-        params: { fields: "id,shares", limit: 100, access_token: token },
+        params: { fields: "id", limit: 100, access_token: token },
       });
+
       for (const post of res.data?.data || []) {
-        posts.push(post.id);
-        totalShare += post.shares?.count || 0;
+        if (!idsExistentes.has(post.id)) {
+          const { error } = await supabase.from("services_registro_post_share_fb").insert({
+            pagina: dbPageId,
+            post_id: post.id,
+            fecha: hoy,
+          });
+          if (!error) {
+            nuevosRegistrados++;
+            idsExistentes.add(post.id);
+          } else {
+            console.log(`⚠️ Error registrando post share ${post.id}:`, error.message);
+          }
+        }
       }
       url = res.data?.paging?.next || null;
     }
-
-    totalPosts = posts.length;
-    console.log(`📝 Total posts página ${pageId}: ${totalPosts}`);
-
-    for (let i = 0; i < posts.length; i++) {
-      const postId = posts[i];
-
-      try {
-        const res1 = await axios.get(
-          `https://graph.facebook.com/v21.0/${postId}/insights`,
-          { params: { metric: "post_media_view,post_total_media_view_unique", access_token: token } }
-        );
-        let impPost = 0, impUnicasPost = 0;
-        for (const metric of res1.data?.data || []) {
-          if (metric.period === "lifetime") {
-            const value = metric.values?.[0]?.value || 0;
-            if (metric.name === "post_media_view") impPost = Number(value) || 0;
-            if (metric.name === "post_total_media_view_unique") impUnicasPost = Number(value) || 0;
-          }
-        }
-        totalImpresiones += impPost;
-        totalImpresionesUnicas += impUnicasPost;
-      } catch (err) {
-        console.log(`   ⚠️ Error impresiones post ${postId}:`, err.response?.data?.error?.message || err.message);
-      }
-      await sleep(200);
-
-      const clicks = await getClicksPost(postId, token);
-      totalClicks += clicks;
-      await sleep(200);
-
-      try {
-        const res3 = await axios.get(
-          `https://graph.facebook.com/v21.0/${postId}`,
-          { params: { fields: "reactions.summary(true)", access_token: token } }
-        );
-        totalReactions += res3.data?.reactions?.summary?.total_count || 0;
-      } catch (err) {
-        console.log(`   ⚠️ Error reactions post ${postId}:`, err.response?.data?.error?.message || err.message);
-      }
-      await sleep(200);
-
-      const comentarios = await getComentariosPost(postId, token);
-      totalComentarios += comentarios;
-      await sleep(200);
-    }
   } catch (err) {
-    console.log("❌ ACUMULADO TODOS POSTS ERROR:", err.response?.data?.error?.message || err.message);
+    console.log("❌ DESCUBRIR POSTS SHARE ERROR:", err.response?.data?.error?.message || err.message);
+  }
+
+  console.log(`📝 Posts share nuevos registrados para página ${dbPageId}: ${nuevosRegistrados}`);
+  return nuevosRegistrados;
+}
+
+async function getAcumuladoPostsShare(dbPageId, token) {
+  const { data: posts } = await supabase
+    .from("services_registro_post_share_fb")
+    .select("post_id")
+    .eq("pagina", dbPageId);
+
+  if (!posts?.length) {
+    console.log(`⚠️ Sin posts registrados en services_registro_post_share_fb para página ${dbPageId}`);
+    return {
+      totalShare: 0, totalImpresiones: 0, totalImpresionesUnicas: 0,
+      frecuencia: 0, totalReactions: 0, totalEngagement: 0,
+      totalClicks: 0, totalComentarios: 0,
+    };
+  }
+
+  let totalShare = 0, totalImpresiones = 0, totalImpresionesUnicas = 0;
+  let totalReactions = 0, totalClicks = 0, totalComentarios = 0;
+
+  console.log(`📦 Calculando acumulado share para ${posts.length} posts registrados de página ${dbPageId}...`);
+
+  for (const post of posts) {
+    const postId = post.post_id;
+
+    try {
+      const res1 = await axios.get(
+        `https://graph.facebook.com/v21.0/${postId}/insights`,
+        { params: { metric: "post_media_view,post_total_media_view_unique", access_token: token } }
+      );
+      for (const metric of res1.data?.data || []) {
+        if (metric.period === "lifetime") {
+          const value = metric.values?.[0]?.value || 0;
+          if (metric.name === "post_media_view") totalImpresiones += Number(value) || 0;
+          if (metric.name === "post_total_media_view_unique") totalImpresionesUnicas += Number(value) || 0;
+        }
+      }
+    } catch { /* silencioso */ }
+    await sleep(200);
+
+    const clicks = await getClicksPost(postId, token);
+    totalClicks += clicks;
+    await sleep(200);
+
+    try {
+      const res3 = await axios.get(
+        `https://graph.facebook.com/v21.0/${postId}`,
+        { params: { fields: "reactions.summary(true),shares", access_token: token } }
+      );
+      totalReactions += res3.data?.reactions?.summary?.total_count || 0;
+      totalShare += res3.data?.shares?.count || 0;
+    } catch { /* silencioso */ }
+    await sleep(200);
+
+    const comentarios = await getComentariosPost(postId, token);
+    totalComentarios += comentarios;
+    await sleep(200);
   }
 
   const totalEngagement = totalShare + totalReactions + totalClicks + totalComentarios;
-
   const frecuencia = totalImpresionesUnicas > 0
     ? Math.round((totalImpresiones / totalImpresionesUnicas) * 100) / 100
     : 0;
 
-  console.log(`📊 RESUMEN FINAL página ${pageId}: imp=${totalImpresiones} imp_unicas=${totalImpresionesUnicas} react=${totalReactions} clicks=${totalClicks} comentarios=${totalComentarios} shares=${totalShare} engagement=${totalEngagement}`);
+  console.log(`📊 Acumulado share página ${dbPageId}: imp=${totalImpresiones} imp_u=${totalImpresionesUnicas} react=${totalReactions} clicks=${totalClicks} comentarios=${totalComentarios} shares=${totalShare} engagement=${totalEngagement}`);
 
   return {
     totalShare, totalImpresiones, totalImpresionesUnicas, frecuencia,
-    totalReactions, totalEngagement, totalClicks, totalComentarios, totalPosts,
+    totalReactions, totalEngagement, totalClicks, totalComentarios,
   };
 }
+
+// ===========================================
+// BLOQUE 1 - COMMUNITY POSTS: posts de comercial_post_community_paginas
+// ===========================================
 
 async function getAcumuladoPostsComunidad(dbPageId, token) {
   const { data: posts } = await supabase
@@ -275,12 +311,8 @@ async function getAcumuladoPostsComunidad(dbPageId, token) {
   };
 
   let totalAutoPost = posts.length;
-  let totalImpresiones = 0;
-  let totalImpresionesUnicas = 0;
-  let totalReactions = 0;
-  let totalClicks = 0;
-  let totalComentarios = 0;
-  let totalShare = 0;
+  let totalImpresiones = 0, totalImpresionesUnicas = 0;
+  let totalReactions = 0, totalClicks = 0, totalComentarios = 0, totalShare = 0;
 
   for (const post of posts) {
     try {
@@ -318,7 +350,6 @@ async function getAcumuladoPostsComunidad(dbPageId, token) {
   }
 
   const totalEngagement = totalShare + totalReactions + totalClicks + totalComentarios;
-
   const frecuencia = totalImpresionesUnicas > 0
     ? Math.round((totalImpresiones / totalImpresionesUnicas) * 100) / 100
     : 0;
@@ -326,8 +357,11 @@ async function getAcumuladoPostsComunidad(dbPageId, token) {
   return { totalAutoPost, totalImpresiones, totalImpresionesUnicas, frecuencia, totalReactions, totalEngagement };
 }
 
-// ✅ Descubrir y registrar automáticamente TODOS los posts de páginas clasificacion=2, red_social=2
-async function descubrirYRegistrarPosts(dbPageId, pageId, token, hoy) {
+// ===========================================
+// BLOQUE 2 - SERVICIOS: descubrir y registrar posts de páginas clasificacion=2
+// ===========================================
+
+async function descubrirYRegistrarPostsServices(dbPageId, pageId, token, hoy) {
   let url = `https://graph.facebook.com/v21.0/${pageId}/posts`;
   let nuevosRegistrados = 0;
 
@@ -356,21 +390,20 @@ async function descubrirYRegistrarPosts(dbPageId, pageId, token, hoy) {
             nuevosRegistrados++;
             idsExistentes.add(post.id);
           } else {
-            console.log(`⚠️ Error registrando post ${post.id}:`, error.message);
+            console.log(`⚠️ Error registrando post servicio ${post.id}:`, error.message);
           }
         }
       }
       url = res.data?.paging?.next || null;
     }
   } catch (err) {
-    console.log("❌ DESCUBRIR POSTS ERROR:", err.response?.data?.error?.message || err.message);
+    console.log("❌ DESCUBRIR POSTS SERVICIOS ERROR:", err.response?.data?.error?.message || err.message);
   }
 
-  console.log(`📝 Posts nuevos registrados para página ${dbPageId}: ${nuevosRegistrados}`);
+  console.log(`📝 Posts servicios nuevos registrados para página ${dbPageId}: ${nuevosRegistrados}`);
   return nuevosRegistrados;
 }
 
-// ✅ Registrar insights diarios de cada post activo en services_registro_post_community_paginas
 async function registrarInsightsPostsServices(dbPageId, token, hoy) {
   const { data: posts } = await supabase
     .from("services_registro_post_community_paginas")
@@ -379,10 +412,11 @@ async function registrarInsightsPostsServices(dbPageId, token, hoy) {
     .eq("activo", true);
 
   if (!posts?.length) {
-    console.log(`⚠️ Sin posts activos para página ${dbPageId}`);
+    console.log(`⚠️ Sin posts activos en services para página ${dbPageId}`);
     return;
   }
 
+  let insertados = 0;
   for (const post of posts) {
     const { data: yaExiste } = await supabase
       .from("insights_acumulado_post_community_paginas_facebook")
@@ -441,20 +475,29 @@ async function registrarInsightsPostsServices(dbPageId, token, hoy) {
     });
 
     if (error) {
-      console.log(`❌ ERROR insertando insight post ${post.post_id}:`, error.message);
+      console.log(`❌ ERROR insight post servicio ${post.post_id}:`, error.message);
     } else {
-      console.log(`📊 Insight post ${post.post_id} → imp=${impresiones} imp_u=${impresionesUnicas} share=${share} react=${reactions}`);
+      insertados++;
+      console.log(`📊 Insight servicio post ${post.post_id} → imp=${impresiones} share=${share} react=${reactions}`);
     }
   }
+
+  console.log(`✅ Insights servicios insertados para página ${dbPageId}: ${insertados}/${posts.length}`);
 }
+
+// ===========================================
+// MAIN
+// ===========================================
 
 async function main() {
   const hoy = getTodayCuba();
   const day = getYesterdayCuba();
   const until = nextDay(day);
 
+  console.log(`\n📅 Fecha de hoy (Cuba): ${hoy} | Procesando insights de ayer: ${day}\n`);
+
   // ===========================================
-  // ✅ BLOQUE 1: Páginas clasificacion=1, red_social=2 (lógica original)
+  // BLOQUE 1: Páginas clasificacion=1, red_social=2
   // ===========================================
   const { data: pages, error: pagesError } = await supabase
     .from("community_paginas")
@@ -465,16 +508,16 @@ async function main() {
   if (pagesError || !pages?.length) {
     console.log("❌ Error cargando páginas (clasificacion=1):", pagesError);
   } else {
-    console.log(`📄 Páginas encontradas (clasificacion=1): ${pages.length}`);
-    console.log(`📅 Procesando solo el día: ${day} (hoy=${hoy})`);
+    console.log(`📄 Páginas community encontradas (clasificacion=1): ${pages.length}\n`);
 
     for (const page of pages) {
       const fbId = page.id_page;
       const dbId = page.id;
       const token = page.token;
+      const nombre = page.nombre || `Página ${dbId}`;
 
       if (!fbId || !token) {
-        console.warn(`⚠️ Página ${dbId} sin id_page o token, saltando...`);
+        console.warn(`⚠️ [${nombre}] Sin id_page o token, saltando...`);
         continue;
       }
 
@@ -483,11 +526,21 @@ async function main() {
           params: { fields: "id", access_token: token },
         });
       } catch (err) {
-        console.log(`⚠️ Página ${dbId} (${fbId}) no accesible, saltando:`, err.response?.data?.error?.message || err.message);
+        console.log(`⚠️ [${nombre}] No accesible vía API, saltando:`, err.response?.data?.error?.message || err.message);
         continue;
       }
 
-      // ✅ PASO 1: Guardar insights_acumulado_share_facebook de HOY
+      console.log(`\n▶️ Procesando página: ${nombre} (id=${dbId})`);
+
+      // PASO 1: Descubrir y registrar posts nuevos en services_registro_post_share_fb
+      const nuevosShare = await descubrirYRegistrarPostsShare(dbId, fbId, token, hoy);
+      await registrarLog(
+        `[${nombre}] Descubrimiento posts share FB: ${nuevosShare} nuevos registrados en services_registro_post_share_fb`,
+        hoy
+      );
+      await sleep(300);
+
+      // PASO 2: Acumulado de todos los posts registrados en services_registro_post_share_fb
       const { data: acumuladoShareHoyExiste } = await supabase
         .from("insights_acumulado_share_facebook")
         .select("id_record")
@@ -496,10 +549,10 @@ async function main() {
         .maybeSingle();
 
       if (!acumuladoShareHoyExiste) {
-        const acShare = await getAcumuladoTodosLosPosts(fbId, token);
+        const acShare = await getAcumuladoPostsShare(dbId, token);
         await sleep(500);
 
-        await supabase.from("insights_acumulado_share_facebook").insert({
+        const { error } = await supabase.from("insights_acumulado_share_facebook").insert({
           id_pagina: dbId,
           fecha: hoy,
           share: acShare.totalShare,
@@ -512,12 +565,20 @@ async function main() {
           clicks: acShare.totalClicks,
           impresiones_days_28: await getDays28(fbId, token, hoy),
         });
-        console.log(`📦 insights_acumulado_share_facebook guardado: página ${dbId} → ${hoy}`);
+
+        if (!error) {
+          await registrarLog(
+            `[${nombre}] Acumulado share FB guardado → share=${acShare.totalShare} imp=${acShare.totalImpresiones} react=${acShare.totalReactions}`,
+            hoy
+          );
+        } else {
+          console.log(`❌ Error insertando acumulado share ${nombre}:`, error.message);
+        }
       } else {
-        console.log(`✅ insights_acumulado_share_facebook ya existe: página ${dbId} → ${hoy}`);
+        console.log(`✅ [${nombre}] Acumulado share ya existe para ${hoy}`);
       }
 
-      // ✅ PASO 2: Guardar insights_acumulado_post_community_paginas_facebook de HOY
+      // PASO 3: Acumulado de posts de comunidad (comercial_post_community_paginas)
       const { data: acumuladoPostComHoy } = await supabase
         .from("insights_acumulado_post_community_paginas_facebook")
         .select("id")
@@ -529,7 +590,7 @@ async function main() {
         const acPostCom = await getAcumuladoPostsComunidad(dbId, token);
         await sleep(500);
 
-        await supabase.from("insights_acumulado_post_community_paginas_facebook").insert({
+        const { error } = await supabase.from("insights_acumulado_post_community_paginas_facebook").insert({
           id_pagina: dbId,
           fecha: hoy,
           total_auto_post: acPostCom.totalAutoPost,
@@ -540,12 +601,20 @@ async function main() {
           engagement: acPostCom.totalEngagement,
           impresiones_days_28: await getDays28(fbId, token, hoy),
         });
-        console.log(`📦 insights_acumulado_post_community_paginas_facebook guardado: página ${dbId} → ${hoy}`);
+
+        if (!error) {
+          await registrarLog(
+            `[${nombre}] Acumulado posts community FB guardado → ${acPostCom.totalAutoPost} posts activos`,
+            hoy
+          );
+        } else {
+          console.log(`❌ Error insertando acumulado community ${nombre}:`, error.message);
+        }
       } else {
-        console.log(`✅ insights_acumulado_post_community_paginas_facebook ya existe: página ${dbId} → ${hoy}`);
+        console.log(`✅ [${nombre}] Acumulado posts community ya existe para ${hoy}`);
       }
 
-      // ✅ PASO 3: insights_diario_groups_auto_post_facebook de AYER
+      // PASO 4: Insights diarios de ayer (delta) → insights_diario_groups_auto_post_facebook
       const { data: diarioAutoExiste } = await supabase
         .from("insights_diario_groups_auto_post_facebook")
         .select("id")
@@ -554,55 +623,45 @@ async function main() {
         .maybeSingle();
 
       if (!diarioAutoExiste) {
-        console.log(`📊 Procesando insights del día ${day} para página ${dbId}`);
+        console.log(`📊 [${nombre}] Calculando insights diarios del ${day}...`);
 
-        const impresiones = await getMetric(fbId, token, "page_media_view", day, until);
+        const impresiones           = await getMetric(fbId, token, "page_media_view", day, until);
         await sleep(300);
         const impresiones_unicas_dia = await getMetric(fbId, token, "page_total_media_view_unique", day, until);
         await sleep(300);
-        const reactions = await getMetric(fbId, token, "page_actions_post_reactions_total", day, until);
+        const reactions              = await getMetric(fbId, token, "page_actions_post_reactions_total", day, until);
         await sleep(300);
-        const engagement = await getMetric(fbId, token, "page_post_engagements", day, until);
+        const engagement             = await getMetric(fbId, token, "page_post_engagements", day, until);
         await sleep(300);
-        const vistas_perfil = await getMetric(fbId, token, "page_views_total", day, until);
+        const vistas_perfil          = await getMetric(fbId, token, "page_views_total", day, until);
         await sleep(300);
-        const days28Dia = await getDays28(fbId, token, day);
+        const days28Dia              = await getDays28(fbId, token, day);
         await sleep(300);
 
-        const { data: acShareHoy } = await supabase
+        const { data: acShareHoy }  = await supabase
           .from("insights_acumulado_share_facebook")
           .select("share, impresiones, impresiones_unicas, reactions, engagement")
-          .eq("id_pagina", dbId)
-          .eq("fecha", hoy)
-          .maybeSingle();
+          .eq("id_pagina", dbId).eq("fecha", hoy).maybeSingle();
 
         const { data: acShareAyer } = await supabase
           .from("insights_acumulado_share_facebook")
           .select("share, impresiones, impresiones_unicas, reactions, engagement")
-          .eq("id_pagina", dbId)
-          .eq("fecha", day)
-          .maybeSingle();
+          .eq("id_pagina", dbId).eq("fecha", day).maybeSingle();
 
         let share = 0;
-        let impresiones_auto = impresiones;
+        let impresiones_auto       = impresiones;
         let impresiones_unicas_auto = impresiones_unicas_dia;
-        let reactions_auto = reactions;
-        let engagement_auto = engagement;
+        let reactions_auto         = reactions;
+        let engagement_auto        = engagement;
 
         if (acShareHoy && acShareAyer) {
           share = Math.max(0, acShareHoy.share - acShareAyer.share);
-
-          const diffImpShare = Math.max(0, acShareHoy.impresiones - acShareAyer.impresiones);
-          const diffImpUnicasShare = Math.max(0, acShareHoy.impresiones_unicas - acShareAyer.impresiones_unicas);
-          const diffReactionsShare = Math.max(0, acShareHoy.reactions - acShareAyer.reactions);
-          const diffEngagementShare = Math.max(0, acShareHoy.engagement - acShareAyer.engagement);
-
-          impresiones_auto = Math.max(0, impresiones - diffImpShare);
-          impresiones_unicas_auto = Math.max(0, impresiones_unicas_dia - diffImpUnicasShare);
-          reactions_auto = Math.max(0, reactions - diffReactionsShare);
-          engagement_auto = Math.max(0, engagement - diffEngagementShare);
+          impresiones_auto        = Math.max(0, impresiones        - Math.max(0, acShareHoy.impresiones       - acShareAyer.impresiones));
+          impresiones_unicas_auto = Math.max(0, impresiones_unicas_dia - Math.max(0, acShareHoy.impresiones_unicas - acShareAyer.impresiones_unicas));
+          reactions_auto          = Math.max(0, reactions          - Math.max(0, acShareHoy.reactions         - acShareAyer.reactions));
+          engagement_auto         = Math.max(0, engagement         - Math.max(0, acShareHoy.engagement        - acShareAyer.engagement));
         } else {
-          console.log(`⚠️ Página ${dbId}: no hay acumulado_share de ${hoy} o ${day}, registrando insight total sin restar`);
+          console.log(`⚠️ [${nombre}] Sin acumulado share de ${hoy} o ${day}, registrando total sin restar`);
         }
 
         const frecuenciaAuto = impresiones_unicas_auto > 0
@@ -618,22 +677,25 @@ async function main() {
           frecuencia: frecuenciaAuto,
           reactions: reactions_auto,
           engagement: engagement_auto,
-          vistas_perfil: vistas_perfil,
+          vistas_perfil,
           impresiones_days_28: days28Dia,
         });
 
-        if (error) {
-          console.log(`❌ INSERT ERROR ${dbId} → ${day}:`, error.message);
+        if (!error) {
+          await registrarLog(
+            `[${nombre}] Insights diarios FB registrados para ${day} → imp=${impresiones_auto} react=${reactions_auto} engagement=${engagement_auto}`,
+            hoy
+          );
         } else {
-          console.log(`✅ OK ${dbId} → ${day}`);
+          console.log(`❌ [${nombre}] Error insertando insights diarios:`, error.message);
         }
 
         await sleep(300);
       } else {
-        console.log(`✅ Página ${dbId} ya tiene insights_diario_groups_auto_post_facebook del día ${day}`);
+        console.log(`✅ [${nombre}] Insights diarios ya registrados para ${day}`);
       }
 
-      // ✅ PASO 4: Registrar seguidores actuales de la página
+      // PASO 5: Seguidores actuales de la página
       const { data: seguidoresHoyExiste } = await supabase
         .from("insights_crecimiento_acumulado_paginas")
         .select("id")
@@ -644,26 +706,26 @@ async function main() {
       if (!seguidoresHoyExiste) {
         const seguidores = await getSeguidoresPagina(fbId, token);
         if (seguidores !== null) {
-          const { error: errorSeguidores } = await supabase
-            .from("insights_crecimiento_acumulado_paginas")
-            .insert({
-              id_pagina: fbId,
-              fecha: hoy,
-              seguidores: seguidores,
-            });
-
-          if (errorSeguidores) {
-            console.log(`❌ ERROR insertando seguidores página ${dbId} (${fbId}):`, errorSeguidores.message);
+          const { error } = await supabase.from("insights_crecimiento_acumulado_paginas").insert({
+            id_pagina: fbId,
+            fecha: hoy,
+            seguidores,
+          });
+          if (!error) {
+            await registrarLog(
+              `[${nombre}] Seguidores FB actualizados → ${seguidores} seguidores`,
+              hoy
+            );
           } else {
-            console.log(`👥 Seguidores guardados: página ${dbId} → ${hoy}: ${seguidores}`);
+            console.log(`❌ [${nombre}] Error insertando seguidores:`, error.message);
           }
         }
         await sleep(200);
       } else {
-        console.log(`✅ Seguidores ya registrados: página ${dbId} → ${hoy}`);
+        console.log(`✅ [${nombre}] Seguidores ya registrados para ${hoy}`);
       }
 
-      // ✅ PASO 5: Registrar total de mensajes acumulados de la página
+      // PASO 6: Total mensajes acumulados de la página
       const { data: mensajesHoyExiste } = await supabase
         .from("insights_acumulado_mensajes_paginas_facebook")
         .select("id")
@@ -675,27 +737,27 @@ async function main() {
         const totalMensajes = await getTotalMensajesPagina(fbId, token);
         await sleep(300);
 
-        const { error: errorMensajes } = await supabase
-          .from("insights_acumulado_mensajes_paginas_facebook")
-          .insert({
-            id_pagina: fbId,
-            fecha: hoy,
-            total_mensajes: totalMensajes,
-          });
-
-        if (errorMensajes) {
-          console.log(`❌ ERROR insertando mensajes página ${dbId} (${fbId}):`, errorMensajes.message);
+        const { error } = await supabase.from("insights_acumulado_mensajes_paginas_facebook").insert({
+          id_pagina: fbId,
+          fecha: hoy,
+          total_mensajes: totalMensajes,
+        });
+        if (!error) {
+          await registrarLog(
+            `[${nombre}] Mensajes FB actualizados → ${totalMensajes} mensajes acumulados`,
+            hoy
+          );
         } else {
-          console.log(`💬 Mensajes guardados: página ${dbId} → ${hoy}: ${totalMensajes}`);
+          console.log(`❌ [${nombre}] Error insertando mensajes:`, error.message);
         }
       } else {
-        console.log(`✅ Mensajes ya registrados: página ${dbId} → ${hoy}`);
+        console.log(`✅ [${nombre}] Mensajes ya registrados para ${hoy}`);
       }
     }
   }
 
   // ===========================================
-  // ✅ BLOQUE 2: Páginas clasificacion=2, red_social=2 (servicios de posts)
+  // BLOQUE 2: Páginas clasificacion=2, red_social=2 (servicios)
   // ===========================================
   const { data: pagesServices, error: pagesServicesError } = await supabase
     .from("community_paginas")
@@ -704,17 +766,18 @@ async function main() {
     .eq("red_social", 2);
 
   if (pagesServicesError || !pagesServices?.length) {
-    console.log("❌ Error cargando páginas (clasificacion=2):", pagesServicesError);
+    console.log("❌ Error cargando páginas servicios (clasificacion=2):", pagesServicesError);
   } else {
-    console.log(`\n📄 Páginas de servicios encontradas (clasificacion=2): ${pagesServices.length}`);
+    console.log(`\n📄 Páginas servicios encontradas (clasificacion=2): ${pagesServices.length}\n`);
 
     for (const page of pagesServices) {
-      const fbId = page.id_page;
-      const dbId = page.id;
-      const token = page.token;
+      const fbId   = page.id_page;
+      const dbId   = page.id;
+      const token  = page.token;
+      const nombre = page.nombre || `Página servicios ${dbId}`;
 
       if (!fbId || !token) {
-        console.warn(`⚠️ Página servicios ${dbId} sin id_page o token, saltando...`);
+        console.warn(`⚠️ [${nombre}] Sin id_page o token, saltando...`);
         continue;
       }
 
@@ -723,23 +786,31 @@ async function main() {
           params: { fields: "id", access_token: token },
         });
       } catch (err) {
-        console.log(`⚠️ Página servicios ${dbId} (${fbId}) no accesible, saltando:`, err.response?.data?.error?.message || err.message);
+        console.log(`⚠️ [${nombre}] No accesible vía API, saltando:`, err.response?.data?.error?.message || err.message);
         continue;
       }
 
-      // ✅ Descubrir y registrar nuevos posts
-      await descubrirYRegistrarPosts(dbId, fbId, token, hoy);
+      console.log(`\n▶️ Procesando página servicios: ${nombre} (id=${dbId})`);
+
+      const nuevos = await descubrirYRegistrarPostsServices(dbId, fbId, token, hoy);
+      if (nuevos > 0) {
+        await registrarLog(
+          `[${nombre}] Descubrimiento posts servicios FB: ${nuevos} nuevos registrados en services_registro_post_community_paginas`,
+          hoy
+        );
+      }
       await sleep(300);
 
-      // ✅ Registrar insights diarios de cada post
       await registrarInsightsPostsServices(dbId, token, hoy);
+      await registrarLog(
+        `[${nombre}] Insights diarios posts servicios FB actualizados en insights_acumulado_post_community_paginas_facebook`,
+        hoy
+      );
       await sleep(300);
     }
   }
 
-  await registrarLogSistema(hoy);
-
-  console.log("\n🎉 Completado.");
+  console.log("\n🎉 Reporte diario Facebook completado.");
 }
 
 main();
