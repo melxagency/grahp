@@ -32,33 +32,43 @@ def get_telegram_channels():
     return response.data
 
 
-def get_post_ids_registrados(pagina_id):
-    """Set de post_id ya registrados en services_registro_post_channels para este channel."""
+def get_registros_channel(channel_id):
+    """Devuelve dict {post_id: id_registro} de services_registro_post_channels para este channel."""
     response = supabase.table("services_registro_post_channels") \
-        .select("post_id") \
-        .eq("channel", pagina_id) \
+        .select("id,post_id") \
+        .eq("channel", channel_id) \
         .execute()
-    return {row["post_id"] for row in response.data}
+    return {row["post_id"]: row["id"] for row in response.data}
 
 
-def registrar_nuevo_post(pagina_id, post_id, fecha):
-    """Inserta un post nuevo detectado en services_registro_post_channels."""
-    supabase.table("services_registro_post_channels").insert({
-        "channel": pagina_id,
+def upsert_post_y_obtener_id(channel_id, post_id, fecha):
+    """Inserta o ignora el post en services_registro_post_channels y devuelve su id."""
+    result = supabase.table("services_registro_post_channels").upsert({
+        "channel": channel_id,
         "fecha_inicio": fecha,
         "post_id": post_id,
         "activo": True,
         "fecha_final": None,
-    }).execute()
+    }, on_conflict="channel,post_id").execute()
+
+    # Tras el upsert, buscar el id del registro
+    registro = supabase.table("services_registro_post_channels") \
+        .select("id") \
+        .eq("channel", channel_id) \
+        .eq("post_id", post_id) \
+        .single() \
+        .execute()
+
+    return registro.data["id"]
 
 
 async def procesar_channel(channel, today, insights_payload):
     nombre = channel["nombre"]
     link = channel.get("link")
-    pagina_id = channel["id"]
+    channel_id = channel["id"]
 
     if not link:
-        print(f"⚠️ {nombre} (id={pagina_id}) sin link, omitiendo")
+        print(f"⚠️ {nombre} (id={channel_id}) sin link, omitiendo")
         return
 
     print(f"\n➡️ Procesando channel: {nombre} ({link})")
@@ -69,7 +79,8 @@ async def procesar_channel(channel, today, insights_payload):
         print(f"❌ No se pudo obtener el channel {nombre}: {e}")
         return
 
-    registrados = get_post_ids_registrados(pagina_id)
+    # Dict {post_id: id_registro} ya conocidos para este channel
+    registrados = get_registros_channel(channel_id)
     nuevos = 0
     revisados = 0
 
@@ -81,14 +92,17 @@ async def procesar_channel(channel, today, insights_payload):
         post_id = str(mensaje.id)
         revisados += 1
 
-        if post_id not in registrados:
-            registrar_nuevo_post(pagina_id, post_id, today)
-            registrados.add(post_id)
+        if post_id in registrados:
+            id_registro = registrados[post_id]
+        else:
+            # Post nuevo: insertar y obtener su id
+            id_registro = upsert_post_y_obtener_id(channel_id, post_id, today)
+            registrados[post_id] = id_registro
             nuevos += 1
-            print(f"🆕 Nuevo post registrado: {post_id}")
+            print(f"🆕 Nuevo post registrado: post_id={post_id} → id_registro={id_registro}")
 
         insights_payload.append({
-            "post_id": post_id,
+            "id_registro": id_registro,
             "fecha": today,
             "vistas": mensaje.views,
             "share": mensaje.forwards or 0,
