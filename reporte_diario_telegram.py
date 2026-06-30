@@ -23,8 +23,8 @@ def get_today_utc():
 
 
 def get_telegram_channels():
-    """Obtiene los channels de Telegram (red_social = 1) desde community_paginas."""
-    response = supabase.table("community_paginas") \
+    """Obtiene los channels de Telegram (red_social = 1) desde community-channels."""
+    response = supabase.table("community-channels") \
         .select("id,nombre,link") \
         .eq("red_social", 1) \
         .limit(1000) \
@@ -104,7 +104,7 @@ async def main():
 
     await client.start()
 
-    print("📡 Buscando channels de Telegram (red_social=1) en community_paginas...")
+    print("📡 Buscando channels de Telegram (red_social=1) en community-channels...")
     channels = get_telegram_channels()
     print(f"✅ {len(channels)} channels encontrados")
 
