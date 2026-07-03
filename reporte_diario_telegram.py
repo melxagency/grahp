@@ -98,13 +98,21 @@ def sincronizar_id_channel_services(id_registro, id_channel_services):
 async def procesar_channel(channel, today, id_channel_services, insights_payload):
     nombre = channel["nombre"]
     link = channel.get("link")
-    channel_id = channel["id"]
 
     if not link:
-        print(f"⚠️ {nombre} (id={channel_id}) sin link, omitiendo")
+        print(f"⚠️ {nombre} sin link, omitiendo")
         return
 
     print(f"\n➡️ Procesando channel: {nombre} ({link}) [id_channel_services={id_channel_services}]")
+
+    # Solo procesar posts registrados manualmente en oper_registro_post_channels
+    registrados = get_registros_channel(id_channel_services)
+
+    if not registrados:
+        print(f"⚠️ {nombre}: sin posts registrados en oper_registro_post_channels, omitiendo")
+        return
+
+    print(f"📋 {nombre}: {len(registrados)} posts registrados para procesar")
 
     try:
         entity = await client.get_entity(link)
@@ -112,8 +120,7 @@ async def procesar_channel(channel, today, id_channel_services, insights_payload
         print(f"❌ No se pudo obtener el channel {nombre}: {e}")
         return
 
-    registrados = get_registros_channel(channel_id)
-    nuevos = 0
+    post_ids_registrados = set(registrados.keys())
     revisados = 0
 
     async for mensaje in client.iter_messages(entity, limit=MENSAJES_POR_CANAL):
@@ -121,19 +128,11 @@ async def procesar_channel(channel, today, id_channel_services, insights_payload
             continue
 
         post_id = str(mensaje.id)
-        revisados += 1
+        if post_id not in post_ids_registrados:
+            continue  # Ignorar posts no registrados manualmente
 
-        if post_id in registrados:
-            registro = registrados[post_id]
-            id_registro = registro["id"]
-            if registro["id_channel_services"] != id_channel_services:
-                sincronizar_id_channel_services(id_registro, id_channel_services)
-                registro["id_channel_services"] = id_channel_services
-        else:
-            id_registro = upsert_post_y_obtener_id(channel_id, id_channel_services, post_id, today)
-            registrados[post_id] = {"id": id_registro, "id_channel_services": id_channel_services}
-            nuevos += 1
-            print(f"🆕 Nuevo post registrado: post_id={post_id} → id_registro={id_registro}")
+        id_registro = registrados[post_id]["id"]
+        revisados += 1
 
         insights_payload.append({
             "id_registro": id_registro,
@@ -142,7 +141,7 @@ async def procesar_channel(channel, today, id_channel_services, insights_payload
             "share": mensaje.forwards or 0,
         })
 
-    print(f"✅ {nombre}: {revisados} posts revisados, {nuevos} nuevos")
+    print(f"✅ {nombre}: {revisados}/{len(registrados)} posts procesados")
     await asyncio.sleep(2)
 
 
