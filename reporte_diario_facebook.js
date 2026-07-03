@@ -165,8 +165,7 @@ async function getPostInsights(postId, token) {
 
 // ===========================================
 // BLOQUE 1 - SHARE
-// Registra posts nuevos en services_registro_post_share_fb (columna: page_service)
-// Solo calcula acumulado para páginas que tienen page_service asignado
+// oper_registro_post_share_fb
 // ===========================================
 
 async function descubrirYRegistrarPostsShare(pageServiceId, pageId, token, hoy) {
@@ -175,7 +174,7 @@ async function descubrirYRegistrarPostsShare(pageServiceId, pageId, token, hoy) 
 
   try {
     const { data: existentes } = await supabase
-      .from("services_registro_post_share_fb")
+      .from("oper_registro_post_share_fb")
       .select("post_id")
       .eq("page_service", pageServiceId);
 
@@ -185,7 +184,7 @@ async function descubrirYRegistrarPostsShare(pageServiceId, pageId, token, hoy) 
       const res = await axios.get(url, { params: { fields: "id", limit: 100, access_token: token } });
       for (const post of res.data?.data || []) {
         if (!ids.has(post.id)) {
-          const { error } = await supabase.from("services_registro_post_share_fb").insert({
+          const { error } = await supabase.from("oper_registro_post_share_fb").insert({
             page_service: pageServiceId,
             post_id: post.id,
             fecha: hoy,
@@ -206,12 +205,12 @@ async function descubrirYRegistrarPostsShare(pageServiceId, pageId, token, hoy) 
 
 async function getAcumuladoPostsShare(pageServiceId, token) {
   const { data: posts } = await supabase
-    .from("services_registro_post_share_fb")
+    .from("oper_registro_post_share_fb")
     .select("post_id")
     .eq("page_service", pageServiceId);
 
   if (!posts?.length) {
-    console.log(`⚠️ Sin posts en services_registro_post_share_fb para page_service=${pageServiceId}`);
+    console.log(`⚠️ Sin posts en oper_registro_post_share_fb para page_service=${pageServiceId}`);
     return { totalShare: 0, totalImpresiones: 0, totalImpresionesUnicas: 0, frecuencia: 0, totalReactions: 0, totalEngagement: 0, totalClicks: 0, totalComentarios: 0 };
   }
 
@@ -222,12 +221,12 @@ async function getAcumuladoPostsShare(pageServiceId, token) {
 
   for (const post of posts) {
     const ins = await getPostInsights(post.post_id, token);
-    totalImpresiones      += ins.impresiones;
+    totalImpresiones       += ins.impresiones;
     totalImpresionesUnicas += ins.impresionesUnicas;
-    totalShare            += ins.share;
-    totalReactions        += ins.reactions;
-    totalClicks           += ins.clicks;
-    totalComentarios      += ins.comentarios;
+    totalShare             += ins.share;
+    totalReactions         += ins.reactions;
+    totalClicks            += ins.clicks;
+    totalComentarios       += ins.comentarios;
   }
 
   const totalEngagement = totalShare + totalReactions + totalClicks + totalComentarios;
@@ -257,12 +256,12 @@ async function getAcumuladoPostsComunidad(dbPageId, token) {
 
   for (const post of posts) {
     const ins = await getPostInsights(post.post_id, token);
-    totalImpresiones      += ins.impresiones;
+    totalImpresiones       += ins.impresiones;
     totalImpresionesUnicas += ins.impresionesUnicas;
-    totalShare            += ins.share;
-    totalReactions        += ins.reactions;
-    totalClicks           += ins.clicks;
-    totalComentarios      += ins.comentarios;
+    totalShare             += ins.share;
+    totalReactions         += ins.reactions;
+    totalClicks            += ins.clicks;
+    totalComentarios       += ins.comentarios;
   }
 
   const totalEngagement = totalShare + totalReactions + totalClicks + totalComentarios;
@@ -274,8 +273,7 @@ async function getAcumuladoPostsComunidad(dbPageId, token) {
 
 // ===========================================
 // BLOQUE 2 - SERVICIOS
-// Descubrir posts y guardar insights de páginas clasificacion=2
-// Solo posts con page_service asignado en services_registro_post_community_paginas
+// oper_registro_post_community_paginas
 // ===========================================
 
 async function descubrirYRegistrarPostsServices(pageServiceId, pageId, token, hoy) {
@@ -284,7 +282,7 @@ async function descubrirYRegistrarPostsServices(pageServiceId, pageId, token, ho
 
   try {
     const { data: existentes } = await supabase
-      .from("services_registro_post_community_paginas")
+      .from("oper_registro_post_community_paginas")
       .select("post_id")
       .eq("page_service", pageServiceId);
 
@@ -294,7 +292,7 @@ async function descubrirYRegistrarPostsServices(pageServiceId, pageId, token, ho
       const res = await axios.get(url, { params: { fields: "id", limit: 100, access_token: token } });
       for (const post of res.data?.data || []) {
         if (!ids.has(post.id)) {
-          const { error } = await supabase.from("services_registro_post_community_paginas").insert({
+          const { error } = await supabase.from("oper_registro_post_community_paginas").insert({
             page_service: pageServiceId,
             post_id: post.id,
             fecha_inicio: hoy,
@@ -315,9 +313,8 @@ async function descubrirYRegistrarPostsServices(pageServiceId, pageId, token, ho
 }
 
 async function registrarInsightsPostsServices(pageServiceId, token, hoy) {
-  // Solo posts que tienen page_service asignado
   const { data: posts } = await supabase
-    .from("services_registro_post_community_paginas")
+    .from("oper_registro_post_community_paginas")
     .select("post_id")
     .eq("page_service", pageServiceId)
     .eq("activo", true)
@@ -384,9 +381,9 @@ async function main() {
     console.log(`📄 Páginas community (clasificacion=1): ${pages.length}\n`);
 
     for (const page of pages) {
-      const fbId  = page.id_page;
-      const dbId  = page.id;
-      const token = page.token;
+      const fbId   = page.id_page;
+      const dbId   = page.id;
+      const token  = page.token;
       const nombre = page.nombre || `Página ${dbId}`;
 
       if (!fbId || !token) { console.warn(`⚠️ [${nombre}] Sin id_page o token`); continue; }
@@ -400,22 +397,22 @@ async function main() {
 
       console.log(`\n▶️ [${nombre}] (id=${dbId})`);
 
-      // Buscar page_service activo para esta página
+      // Buscar page_service tipo=2 (share) para esta página
       const { data: psRow } = await supabase
         .from("services_pages").select("id")
         .eq("id_pagina", dbId)
+        .eq("tipo_page_services", 2)
         .order("fecha_inicio", { ascending: false })
         .limit(1).maybeSingle();
 
       const pageServiceId = psRow?.id || null;
 
-      // PASO 1: Descubrir posts y calcular acumulado share
-      // Solo si tiene page_service asignado en services_registro_post_share_fb
+      // PASO 1: Descubrir posts nuevos en oper_registro_post_share_fb
       if (pageServiceId) {
         await descubrirYRegistrarPostsShare(pageServiceId, fbId, token, hoy);
         await sleep(300);
       } else {
-        console.log(`⚠️ [${nombre}] Sin page_service, omitiendo acumulado share`);
+        console.log(`⚠️ [${nombre}] Sin page_service tipo=2, omitiendo acumulado share`);
       }
 
       // PASO 2: Guardar acumulado share en insights_acumulado_share_facebook
@@ -448,11 +445,7 @@ async function main() {
       }
 
       // PASO 3: Acumulado posts comunidad
-      const { data: postComHoyExiste } = await supabase
-        .from("insights_acumulado_post_community_paginas_facebook")
-        .select("id").eq("post_id", `${dbId}_acumulado`).eq("fecha", hoy).maybeSingle();
-      // Nota: este bloque usa su propia logica por post, no tiene id_pagina
-      const acPostCom = await getAcumuladoPostsComunidad(dbId, token);
+      await getAcumuladoPostsComunidad(dbId, token);
       await sleep(300);
 
       // PASO 4: Insights diarios de ayer (delta)
@@ -487,11 +480,11 @@ async function main() {
         let react_auto = reactions, eng_auto = engagement;
 
         if (acShareHoy && acShareAyer) {
-          share     = Math.max(0, acShareHoy.share       - acShareAyer.share);
-          imp_auto  = Math.max(0, impresiones            - Math.max(0, acShareHoy.impresiones        - acShareAyer.impresiones));
+          share      = Math.max(0, acShareHoy.share    - acShareAyer.share);
+          imp_auto   = Math.max(0, impresiones         - Math.max(0, acShareHoy.impresiones        - acShareAyer.impresiones));
           imp_u_auto = Math.max(0, impresiones_unicas_dia - Math.max(0, acShareHoy.impresiones_unicas - acShareAyer.impresiones_unicas));
-          react_auto = Math.max(0, reactions             - Math.max(0, acShareHoy.reactions          - acShareAyer.reactions));
-          eng_auto  = Math.max(0, engagement             - Math.max(0, acShareHoy.engagement         - acShareAyer.engagement));
+          react_auto = Math.max(0, reactions            - Math.max(0, acShareHoy.reactions          - acShareAyer.reactions));
+          eng_auto   = Math.max(0, engagement           - Math.max(0, acShareHoy.engagement         - acShareAyer.engagement));
         } else {
           console.log(`⚠️ [${nombre}] Sin acumulado share de ${hoy} o ${day}, registrando total`);
         }
@@ -577,17 +570,18 @@ async function main() {
         continue;
       }
 
-      // Buscar page_service para esta página de servicios
+      // Buscar page_service tipo=1 para esta página de servicios
       const { data: psRow } = await supabase
         .from("services_pages").select("id")
         .eq("id_pagina", dbId)
+        .eq("tipo_page_services", 1)
         .order("fecha_inicio", { ascending: false })
         .limit(1).maybeSingle();
 
       const psId = psRow?.id || null;
 
       if (!psId) {
-        console.log(`⚠️ [${nombre}] Sin services_pages, saltando...`);
+        console.log(`⚠️ [${nombre}] Sin services_pages tipo=1, saltando...`);
         continue;
       }
 
