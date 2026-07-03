@@ -58,12 +58,15 @@ def get_channel_services_map(today):
 
 
 def get_registros_channel(channel_id):
-    """Devuelve dict {post_id: id_registro} de services_registro_post_channels para este channel."""
+    """Devuelve dict {post_id: {"id":..., "id_channel_services":...}} para este channel."""
     response = supabase.table("services_registro_post_channels") \
-        .select("id,post_id") \
+        .select("id,post_id,id_channel_services") \
         .eq("channel", channel_id) \
         .execute()
-    return {row["post_id"]: row["id"] for row in response.data}
+    return {
+        row["post_id"]: {"id": row["id"], "id_channel_services": row["id_channel_services"]}
+        for row in response.data
+    }
 
 
 def upsert_post_y_obtener_id(channel_id, id_channel_services, post_id, fecha):
@@ -86,6 +89,14 @@ def upsert_post_y_obtener_id(channel_id, id_channel_services, post_id, fecha):
         .execute()
 
     return registro.data["id"]
+
+
+def sincronizar_id_channel_services(id_registro, id_channel_services):
+    """Actualiza id_channel_services de un registro ya existente si quedó desactualizado."""
+    supabase.table("services_registro_post_channels") \
+        .update({"id_channel_services": id_channel_services}) \
+        .eq("id", id_registro) \
+        .execute()
 
 
 async def procesar_channel(channel, today, id_channel_services, insights_payload):
@@ -119,11 +130,15 @@ async def procesar_channel(channel, today, id_channel_services, insights_payload
         revisados += 1
 
         if post_id in registrados:
-            id_registro = registrados[post_id]
+            registro = registrados[post_id]
+            id_registro = registro["id"]
+            if registro["id_channel_services"] != id_channel_services:
+                sincronizar_id_channel_services(id_registro, id_channel_services)
+                registro["id_channel_services"] = id_channel_services
         else:
             # Post nuevo: insertar y obtener su id
             id_registro = upsert_post_y_obtener_id(channel_id, id_channel_services, post_id, today)
-            registrados[post_id] = id_registro
+            registrados[post_id] = {"id": id_registro, "id_channel_services": id_channel_services}
             nuevos += 1
             print(f"🆕 Nuevo post registrado: post_id={post_id} → id_registro={id_registro}")
 
