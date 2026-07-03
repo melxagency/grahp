@@ -48,8 +48,6 @@ def get_channel_services_map(today):
         fecha_termino = row.get("fecha_termino")
         if fecha_termino is not None and fecha_termino < today:
             continue
-        # Si hay más de un registro activo para el mismo channel, nos quedamos
-        # con el de fecha_inicio más reciente.
         actual = mapa.get(row["id_channel"])
         if actual is None or row["fecha_inicio"] >= actual["fecha_inicio"]:
             mapa[row["id_channel"]] = row
@@ -59,7 +57,7 @@ def get_channel_services_map(today):
 
 def get_registros_channel(channel_id):
     """Devuelve dict {post_id: {"id":..., "id_channel_services":...}} para este channel."""
-    response = supabase.table("services_registro_post_channels") \
+    response = supabase.table("oper_registro_post_channels") \
         .select("id,post_id,id_channel_services") \
         .eq("channel", channel_id) \
         .execute()
@@ -70,8 +68,8 @@ def get_registros_channel(channel_id):
 
 
 def upsert_post_y_obtener_id(channel_id, id_channel_services, post_id, fecha):
-    """Inserta o ignora el post en services_registro_post_channels y devuelve su id."""
-    supabase.table("services_registro_post_channels").upsert({
+    """Inserta o ignora el post en oper_registro_post_channels y devuelve su id."""
+    supabase.table("oper_registro_post_channels").upsert({
         "channel": channel_id,
         "id_channel_services": id_channel_services,
         "fecha_inicio": fecha,
@@ -80,8 +78,7 @@ def upsert_post_y_obtener_id(channel_id, id_channel_services, post_id, fecha):
         "fecha_final": None,
     }, on_conflict="channel,post_id").execute()
 
-    # Tras el upsert, buscar el id del registro
-    registro = supabase.table("services_registro_post_channels") \
+    registro = supabase.table("oper_registro_post_channels") \
         .select("id") \
         .eq("channel", channel_id) \
         .eq("post_id", post_id) \
@@ -93,7 +90,7 @@ def upsert_post_y_obtener_id(channel_id, id_channel_services, post_id, fecha):
 
 def sincronizar_id_channel_services(id_registro, id_channel_services):
     """Actualiza id_channel_services de un registro ya existente si quedó desactualizado."""
-    supabase.table("services_registro_post_channels") \
+    supabase.table("oper_registro_post_channels") \
         .update({"id_channel_services": id_channel_services}) \
         .eq("id", id_registro) \
         .execute()
@@ -116,13 +113,11 @@ async def procesar_channel(channel, today, id_channel_services, insights_payload
         print(f"❌ No se pudo obtener el channel {nombre}: {e}")
         return
 
-    # Dict {post_id: id_registro} ya conocidos para este channel
     registrados = get_registros_channel(channel_id)
     nuevos = 0
     revisados = 0
 
     async for mensaje in client.iter_messages(entity, limit=MENSAJES_POR_CANAL):
-        # Solo publicaciones reales del canal (tienen "views")
         if mensaje.views is None:
             continue
 
@@ -136,7 +131,6 @@ async def procesar_channel(channel, today, id_channel_services, insights_payload
                 sincronizar_id_channel_services(id_registro, id_channel_services)
                 registro["id_channel_services"] = id_channel_services
         else:
-            # Post nuevo: insertar y obtener su id
             id_registro = upsert_post_y_obtener_id(channel_id, id_channel_services, post_id, today)
             registrados[post_id] = {"id": id_registro, "id_channel_services": id_channel_services}
             nuevos += 1
@@ -172,7 +166,7 @@ async def main():
     for channel in channels:
         id_channel_services = channel_services_map.get(channel["id"])
         if id_channel_services is None:
-            print(f"⏭️  {channel['nombre']} (id={channel['id']}) sin servicio activo (id_channel_services), se omite")
+            print(f"⏭️  {channel['nombre']} (id={channel['id']}) sin servicio activo, omitiendo")
             continue
         await procesar_channel(channel, today, id_channel_services, insights_payload)
 
