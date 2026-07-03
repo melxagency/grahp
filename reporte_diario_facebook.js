@@ -168,41 +168,6 @@ async function getPostInsights(postId, token) {
 // oper_registro_post_share_fb
 // ===========================================
 
-async function descubrirYRegistrarPostsShare(pageServiceId, pageId, token, hoy) {
-  let url = `https://graph.facebook.com/v21.0/${pageId}/posts`;
-  let nuevos = 0;
-
-  try {
-    const { data: existentes } = await supabase
-      .from("oper_registro_post_share_fb")
-      .select("post_id")
-      .eq("page_service", pageServiceId);
-
-    const ids = new Set((existentes || []).map((p) => p.post_id));
-
-    while (url) {
-      const res = await axios.get(url, { params: { fields: "id", limit: 100, access_token: token } });
-      for (const post of res.data?.data || []) {
-        if (!ids.has(post.id)) {
-          const { error } = await supabase.from("oper_registro_post_share_fb").insert({
-            page_service: pageServiceId,
-            post_id: post.id,
-            fecha: hoy,
-          });
-          if (!error) { nuevos++; ids.add(post.id); }
-          else console.log(`⚠️ Error registrando post share ${post.id}:`, error.message);
-        }
-      }
-      url = res.data?.paging?.next || null;
-    }
-  } catch (err) {
-    console.log("❌ DESCUBRIR POSTS SHARE ERROR:", err.response?.data?.error?.message || err.message);
-  }
-
-  console.log(`📝 Posts share nuevos: ${nuevos}`);
-  return nuevos;
-}
-
 async function getAcumuladoPostsShare(pageServiceId, token) {
   const { data: posts } = await supabase
     .from("oper_registro_post_share_fb")
@@ -397,25 +362,18 @@ async function main() {
 
       console.log(`\n▶️ [${nombre}] (id=${dbId})`);
 
-      // Buscar page_service tipo=2 (share) para esta página
+      // Buscar page_service tipo=1 para esta página (donde están los posts registrados manualmente)
       const { data: psRow } = await supabase
         .from("services_pages").select("id")
         .eq("id_pagina", dbId)
-        .eq("tipo_page_services", 2)
+        .eq("tipo_page_services", 1)
         .order("fecha_inicio", { ascending: false })
         .limit(1).maybeSingle();
 
       const pageServiceId = psRow?.id || null;
 
-      // PASO 1: Descubrir posts nuevos en oper_registro_post_share_fb
-      if (pageServiceId) {
-        await descubrirYRegistrarPostsShare(pageServiceId, fbId, token, hoy);
-        await sleep(300);
-      } else {
-        console.log(`⚠️ [${nombre}] Sin page_service tipo=2, omitiendo acumulado share`);
-      }
-
-      // PASO 2: Guardar acumulado share en insights_acumulado_share_facebook
+      // PASO 1+2: Calcular acumulado share de posts ya registrados en oper_registro_post_share_fb
+      // Los posts se registran manualmente — el script solo lee los existentes
       const { data: shareHoyExiste } = await supabase
         .from("insights_acumulado_share_facebook")
         .select("id_record").eq("id_pagina", dbId).eq("fecha", hoy).maybeSingle();
