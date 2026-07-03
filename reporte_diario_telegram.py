@@ -55,11 +55,11 @@ def get_channel_services_map(today):
     return {id_channel: row["id"] for id_channel, row in mapa.items()}
 
 
-def get_registros_channel(channel_id):
-    """Devuelve dict {post_id: {"id":..., "id_channel_services":...}} para este channel."""
+def get_registros_channel(id_channel_services):
+    """Devuelve dict {post_id: {"id":..., "id_channel_services":...}} para este channel_service."""
     response = supabase.table("oper_registro_post_channels") \
         .select("id,post_id,id_channel_services") \
-        .eq("channel", channel_id) \
+        .eq("id_channel_services", id_channel_services) \
         .execute()
     return {
         row["post_id"]: {"id": row["id"], "id_channel_services": row["id_channel_services"]}
@@ -67,20 +67,19 @@ def get_registros_channel(channel_id):
     }
 
 
-def upsert_post_y_obtener_id(channel_id, id_channel_services, post_id, fecha):
+def upsert_post_y_obtener_id(id_channel_services, post_id, fecha):
     """Inserta o ignora el post en oper_registro_post_channels y devuelve su id."""
     supabase.table("oper_registro_post_channels").upsert({
-        "channel": channel_id,
         "id_channel_services": id_channel_services,
         "fecha_inicio": fecha,
         "post_id": post_id,
         "activo": True,
         "fecha_final": None,
-    }, on_conflict="channel,post_id").execute()
+    }, on_conflict="id_channel_services,post_id").execute()
 
     registro = supabase.table("oper_registro_post_channels") \
         .select("id") \
-        .eq("channel", channel_id) \
+        .eq("id_channel_services", id_channel_services) \
         .eq("post_id", post_id) \
         .single() \
         .execute()
