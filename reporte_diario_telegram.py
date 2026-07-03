@@ -32,6 +32,31 @@ def get_telegram_channels():
     return response.data
 
 
+def get_channel_services_map(today):
+    """
+    Devuelve dict {id_channel: id_channel_services} solo para los channels que
+    tienen un servicio/contrato activo en services_channels (fecha_inicio <= hoy
+    y fecha_termino nulo o >= hoy).
+    """
+    response = supabase.table("services_channels") \
+        .select("id,id_channel,fecha_inicio,fecha_termino") \
+        .lte("fecha_inicio", today) \
+        .execute()
+
+    mapa = {}
+    for row in response.data:
+        fecha_termino = row.get("fecha_termino")
+        if fecha_termino is not None and fecha_termino < today:
+            continue
+        # Si hay más de un registro activo para el mismo channel, nos quedamos
+        # con el de fecha_inicio más reciente.
+        actual = mapa.get(row["id_channel"])
+        if actual is None or row["fecha_inicio"] >= actual["fecha_inicio"]:
+            mapa[row["id_channel"]] = row
+
+    return {id_channel: row["id"] for id_channel, row in mapa.items()}
+
+
 def get_registros_channel(channel_id):
     """Devuelve dict {post_id: id_registro} de services_registro_post_channels para este channel."""
     response = supabase.table("services_registro_post_channels") \
@@ -41,10 +66,11 @@ def get_registros_channel(channel_id):
     return {row["post_id"]: row["id"] for row in response.data}
 
 
-def upsert_post_y_obtener_id(channel_id, post_id, fecha):
+def upsert_post_y_obtener_id(channel_id, id_channel_services, post_id, fecha):
     """Inserta o ignora el post en services_registro_post_channels y devuelve su id."""
-    result = supabase.table("services_registro_post_channels").upsert({
+    supabase.table("services_registro_post_channels").upsert({
         "channel": channel_id,
+        "id_channel_services": id_channel_services,
         "fecha_inicio": fecha,
         "post_id": post_id,
         "activo": True,
@@ -62,7 +88,7 @@ def upsert_post_y_obtener_id(channel_id, post_id, fecha):
     return registro.data["id"]
 
 
-async def procesar_channel(channel, today, insights_payload):
+async def procesar_channel(channel, today, id_channel_services, insights_payload):
     nombre = channel["nombre"]
     link = channel.get("link")
     channel_id = channel["id"]
@@ -71,7 +97,7 @@ async def procesar_channel(channel, today, insights_payload):
         print(f"⚠️ {nombre} (id={channel_id}) sin link, omitiendo")
         return
 
-    print(f"\n➡️ Procesando channel: {nombre} ({link})")
+    print(f"\n➡️ Procesando channel: {nombre} ({link}) [id_channel_services={id_channel_services}]")
 
     try:
         entity = await client.get_entity(link)
@@ -96,7 +122,7 @@ async def procesar_channel(channel, today, insights_payload):
             id_registro = registrados[post_id]
         else:
             # Post nuevo: insertar y obtener su id
-            id_registro = upsert_post_y_obtener_id(channel_id, post_id, today)
+            id_registro = upsert_post_y_obtener_id(channel_id, id_channel_services, post_id, today)
             registrados[post_id] = id_registro
             nuevos += 1
             print(f"🆕 Nuevo post registrado: post_id={post_id} → id_registro={id_registro}")
@@ -122,10 +148,18 @@ async def main():
     channels = get_telegram_channels()
     print(f"✅ {len(channels)} channels encontrados")
 
+    print("🔗 Buscando servicios activos (channel_services)...")
+    channel_services_map = get_channel_services_map(today)
+    print(f"✅ {len(channel_services_map)} channels con servicio activo asignado")
+
     insights_payload = []
 
     for channel in channels:
-        await procesar_channel(channel, today, insights_payload)
+        id_channel_services = channel_services_map.get(channel["id"])
+        if id_channel_services is None:
+            print(f"⏭️  {channel['nombre']} (id={channel['id']}) sin servicio activo (id_channel_services), se omite")
+            continue
+        await procesar_channel(channel, today, id_channel_services, insights_payload)
 
     if insights_payload:
         print(f"\n🚀 Insertando {len(insights_payload)} registros en insights_acumulado_post_channel_telegram...")
