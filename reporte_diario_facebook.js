@@ -241,42 +241,6 @@ async function getAcumuladoPostsComunidad(dbPageId, token) {
 // oper_registro_post_community_paginas
 // ===========================================
 
-async function descubrirYRegistrarPostsServices(pageServiceId, pageId, token, hoy) {
-  let url = `https://graph.facebook.com/v21.0/${pageId}/posts`;
-  let nuevos = 0;
-
-  try {
-    const { data: existentes } = await supabase
-      .from("oper_registro_post_community_paginas")
-      .select("post_id")
-      .eq("page_service", pageServiceId);
-
-    const ids = new Set((existentes || []).map((p) => p.post_id));
-
-    while (url) {
-      const res = await axios.get(url, { params: { fields: "id", limit: 100, access_token: token } });
-      for (const post of res.data?.data || []) {
-        if (!ids.has(post.id)) {
-          const { error } = await supabase.from("oper_registro_post_community_paginas").insert({
-            page_service: pageServiceId,
-            post_id: post.id,
-            fecha_inicio: hoy,
-            activo: true,
-          });
-          if (!error) { nuevos++; ids.add(post.id); }
-          else console.log(`⚠️ Error registrando post servicio ${post.id}:`, error.message);
-        }
-      }
-      url = res.data?.paging?.next || null;
-    }
-  } catch (err) {
-    console.log("❌ DESCUBRIR POSTS SERVICIOS ERROR:", err.response?.data?.error?.message || err.message);
-  }
-
-  console.log(`📝 Posts servicios nuevos: ${nuevos}`);
-  return nuevos;
-}
-
 async function registrarInsightsPostsServices(pageServiceId, token, hoy) {
   const { data: posts } = await supabase
     .from("oper_registro_post_community_paginas")
@@ -554,8 +518,7 @@ async function main() {
 
       console.log(`\n▶️ [${nombre}] (id=${dbId}, page_service=${psId})`);
 
-      await descubrirYRegistrarPostsServices(psId, fbId, token, hoy);
-      await sleep(300);
+      // Posts registrados manualmente en oper_registro_post_community_paginas
       await registrarInsightsPostsServices(psId, token, hoy);
       await sleep(300);
     }
