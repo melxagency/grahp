@@ -512,7 +512,7 @@ async function main() {
       const psId = psRow?.id || null;
 
       if (!psId) {
-        console.log(`⚠️ [${nombre}] Sin services_pages tipo=1, saltando...`);
+        console.log(`⚠️ [${nombre}] Sin services_pages activo, saltando...`);
         continue;
       }
 
