@@ -241,7 +241,7 @@ async function getAcumuladoPostsComunidad(dbPageId, token) {
 // oper_registro_post_community_paginas
 // ===========================================
 
-async function registrarInsightsPostsServices(pageServiceId, token, hoy) {
+async function registrarInsightsPostsServices(pageServiceId, fbId, token, hoy) {
   const { data: posts } = await supabase
     .from("oper_registro_post_community_paginas")
     .select("post_id")
@@ -265,7 +265,9 @@ async function registrarInsightsPostsServices(pageServiceId, token, hoy) {
 
     if (yaExiste) continue;
 
-    const ins = await getPostInsights(post.post_id, token);
+    // Construir ID completo pageId_postId si el post_id no lo incluye ya
+    const fullPostId = post.post_id.includes("_") ? post.post_id : `${fbId}_${post.post_id}`;
+    const ins = await getPostInsights(fullPostId, token);
     const engagement = ins.share + ins.reactions + ins.clicks + ins.comentarios;
 
     const { error } = await supabase.from("insights_acumulado_post_community_paginas_facebook").insert({
@@ -519,7 +521,7 @@ async function main() {
       console.log(`\n▶️ [${nombre}] (id=${dbId}, page_service=${psId})`);
 
       // Posts registrados manualmente en oper_registro_post_community_paginas
-      await registrarInsightsPostsServices(psId, token, hoy);
+      await registrarInsightsPostsServices(psId, fbId, token, hoy);
       await sleep(300);
     }
   }
