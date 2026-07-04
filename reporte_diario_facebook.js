@@ -537,11 +537,11 @@ async function main() {
         continue;
       }
 
-      // Buscar page_service tipo=1 para esta página de servicios
+      // Buscar page_service activo para esta página de servicios (sin filtrar tipo)
       const { data: psRow } = await supabase
         .from("services_pages").select("id")
         .eq("id_pagina", dbId)
-        .eq("tipo_page_services", 1)
+        .is("fecha_termino", null)
         .order("fecha_inicio", { ascending: false })
         .limit(1).maybeSingle();
 
