@@ -449,9 +449,18 @@ async function main() {
 
         const frecuencia = imp_u_auto > 0 ? Math.round((imp_auto / imp_u_auto) * 100) / 100 : 0;
 
+        // total_auto_post: suma de post_diarios de grupos activos en oper_registro_autopost_groups_fb
+        const { data: autopostRows } = await supabase
+          .from("oper_registro_autopost_groups_fb")
+          .select("post_diarios")
+          .eq("id_page_service", pageServiceId)
+          .is("fecha_final", null);
+
+        const total_auto_post = (autopostRows || []).reduce((sum, r) => sum + (r.post_diarios || 0), 0);
+
         const { error } = await supabase.from("insights_diario_groups_auto_post_facebook").insert({
           id_pagina: dbId, fecha: day,
-          total_auto_post: share,
+          total_auto_post,
           impresiones: imp_auto,
           impresiones_unicas: imp_u_auto,
           frecuencia,
