@@ -169,11 +169,11 @@ async def main():
         await procesar_channel(channel, today, id_channel_services, insights_payload)
 
     if insights_payload:
-        print(f"\n🚀 Insertando {len(insights_payload)} registros en insights_acumulado_post_channel_telegram...")
+        print(f"\n🚀 Insertando/actualizando {len(insights_payload)} registros en insights_acumulado_post_channel_telegram...")
         result = supabase.table("insights_acumulado_post_channel_telegram") \
-            .insert(insights_payload) \
+            .upsert(insights_payload, on_conflict="id_registro,fecha") \
             .execute()
-        print(f"✅ Inserción completada: {len(result.data)} filas")
+        print(f"✅ Completado: {len(result.data)} filas")
     else:
         print("⚠️ No hay estadisticas de posts para insertar")
 
