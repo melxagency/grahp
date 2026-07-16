@@ -169,10 +169,13 @@ async function getPostInsights(postId, token) {
 // ===========================================
 
 async function getAcumuladoPostsShare(pageServiceId, token) {
-  const { data: posts } = await supabase
+  const hoyDate = new Date();
+  const hoyStr = new Date(hoyDate.getTime() + (-5 * 60 * 60 * 1000)).toISOString().split("T")[0];
+  const { data: allPosts } = await supabase
     .from("oper_registro_post_share_fb")
-    .select("post_id")
+    .select("post_id,fecha_final")
     .eq("page_service", pageServiceId);
+  const posts = (allPosts || []).filter(p => !p.fecha_final || p.fecha_final >= hoyStr);
 
   if (!posts?.length) {
     console.log(`⚠️ Sin posts en oper_registro_post_share_fb para page_service=${pageServiceId}`);
@@ -207,11 +210,14 @@ async function getAcumuladoPostsShare(pageServiceId, token) {
 // ===========================================
 
 async function getAcumuladoPostsComunidad(dbPageId, token) {
-  const { data: posts } = await supabase
+  const hoyDateCom = new Date();
+  const hoyStrCom = new Date(hoyDateCom.getTime() + (-5 * 60 * 60 * 1000)).toISOString().split("T")[0];
+  const { data: allPostsCom } = await supabase
     .from("comercial_post_community_paginas")
-    .select("post_id")
+    .select("post_id,fecha_final")
     .eq("pagina", dbPageId)
     .eq("activo", true);
+  const posts = (allPostsCom || []).filter(p => !p.fecha_final || p.fecha_final >= hoyStrCom);
 
   if (!posts?.length) return { totalAutoPost: 0, totalImpresiones: 0, totalImpresionesUnicas: 0, frecuencia: 0, totalReactions: 0, totalEngagement: 0 };
 
@@ -242,9 +248,10 @@ async function getAcumuladoPostsComunidad(dbPageId, token) {
 // ===========================================
 
 async function registrarInsightsPostsServices(pageServiceId, fbId, token, hoy) {
+  // Solo posts activos y sin fecha_final vencida
   const { data: posts } = await supabase
     .from("oper_registro_post_community_paginas")
-    .select("post_id")
+    .select("id,post_id,fecha_final")
     .eq("page_service", pageServiceId)
     .eq("activo", true)
     .not("page_service", "is", null);
@@ -254,12 +261,21 @@ async function registrarInsightsPostsServices(pageServiceId, fbId, token, hoy) {
     return;
   }
 
+  // Filtrar posts con fecha_final ya pasada
+  const hoyDate = new Date(hoy);
+  const postsVigentes = posts.filter(p => !p.fecha_final || new Date(p.fecha_final) >= hoyDate);
+
+  if (!postsVigentes.length) {
+    console.log(`⚠️ Todos los posts tienen fecha_final vencida para page_service=${pageServiceId}`);
+    return;
+  }
+
   let insertados = 0;
-  for (const post of posts) {
+  for (const post of postsVigentes) {
     const { data: yaExiste } = await supabase
       .from("insights_acumulado_post_community_paginas_facebook")
       .select("id")
-      .eq("post_id", post.post_id)
+      .eq("id_registro", post.id)
       .eq("fecha", hoy)
       .maybeSingle();
 
@@ -271,7 +287,7 @@ async function registrarInsightsPostsServices(pageServiceId, fbId, token, hoy) {
     const engagement = ins.share + ins.reactions + ins.clicks + ins.comentarios;
 
     const { error } = await supabase.from("insights_acumulado_post_community_paginas_facebook").insert({
-      post_id: post.post_id,
+      id_registro: post.id,
       fecha: hoy,
       impresiones: ins.impresiones,
       impresiones_unicas: ins.impresionesUnicas,
@@ -286,7 +302,7 @@ async function registrarInsightsPostsServices(pageServiceId, fbId, token, hoy) {
     else { insertados++; console.log(`📊 Insight servicio ${post.post_id} → imp=${ins.impresiones} share=${ins.share}`); }
   }
 
-  console.log(`✅ Insights servicios insertados: ${insertados}/${posts.length}`);
+  console.log(`✅ Insights servicios insertados: ${insertados}/${postsVigentes.length}`);
 }
 
 // ===========================================
