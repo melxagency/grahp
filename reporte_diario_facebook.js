@@ -344,15 +344,23 @@ async function main() {
 
       console.log(`\n▶️ [${nombre}] (id=${dbId})`);
 
-      // Buscar page_service tipo=1 para esta página (donde están los posts registrados manualmente)
-      const { data: psRow } = await supabase
+      // page_service tipo=1 → AutoPost Groups (para autopost y oper_registro_autopost_groups_fb)
+      const { data: psRow1 } = await supabase
         .from("services_pages").select("id")
         .eq("id_pagina", dbId)
         .eq("tipo_page_services", 1)
         .order("fecha_inicio", { ascending: false })
         .limit(1).maybeSingle();
+      const pageServiceId = psRow1?.id || null;
 
-      const pageServiceId = psRow?.id || null;
+      // page_service tipo=2 → Post Compartidos (para oper_registro_post_share_fb)
+      const { data: psRow2 } = await supabase
+        .from("services_pages").select("id")
+        .eq("id_pagina", dbId)
+        .eq("tipo_page_services", 2)
+        .order("fecha_inicio", { ascending: false })
+        .limit(1).maybeSingle();
+      const pageServiceShareId = psRow2?.id || null;
 
       // PASO 1+2: Calcular acumulado share de posts ya registrados en oper_registro_post_share_fb
       // Los posts se registran manualmente — el script solo lee los existentes
@@ -361,8 +369,8 @@ async function main() {
         .select("id_record").eq("id_pagina", dbId).eq("fecha", hoy).maybeSingle();
 
       if (!shareHoyExiste) {
-        const acShare = pageServiceId
-          ? await getAcumuladoPostsShare(pageServiceId, token)
+        const acShare = pageServiceShareId
+          ? await getAcumuladoPostsShare(pageServiceShareId, token)
           : { totalShare: 0, totalImpresiones: 0, totalImpresionesUnicas: 0, frecuencia: 0, totalReactions: 0, totalEngagement: 0, totalClicks: 0, totalComentarios: 0 };
         await sleep(300);
 
@@ -435,7 +443,7 @@ async function main() {
         const { data: autopostRows } = await supabase
           .from("oper_registro_autopost_groups_fb")
           .select("post_diarios")
-          .eq("id_page_service", pageServiceId)
+          .eq("id_page_service", pageServiceId)  // tipo=1
           .is("fecha_final", null);
 
         const total_auto_post = (autopostRows || []).reduce((sum, r) => sum + (r.post_diarios || 0), 0);
