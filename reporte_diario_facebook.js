@@ -354,10 +354,15 @@ async function main() {
       const pageServiceId = psRow1?.id || null;
 
       // page_service tipo=2 → Post Compartidos (para oper_registro_post_share_fb)
+      // FIX: se agrega .is("fecha_termino", null) para tomar solo el servicio ACTIVO,
+      // igual criterio que ya usa el Bloque 2 mas abajo. Antes, si el servicio de tipo=2
+      // ya habia vencido y no se habia renovado, el codigo lo seguia usando de todas formas,
+      // encontrando 0 posts registrados y guardando insights en cero para siempre.
       const { data: psRow2 } = await supabase
         .from("services_pages").select("id")
         .eq("id_pagina", dbId)
         .eq("tipo_page_services", 2)
+        .is("fecha_termino", null)
         .order("fecha_inicio", { ascending: false })
         .limit(1).maybeSingle();
       const pageServiceShareId = psRow2?.id || null;
@@ -369,6 +374,9 @@ async function main() {
         .select("id_record").eq("id_pagina", dbId).eq("fecha", hoy).maybeSingle();
 
       if (!shareHoyExiste) {
+        if (!pageServiceShareId) {
+          console.log(`⚠️ [${nombre}] Sin services_pages activo (tipo=2 Post Compartidos), se registra en cero`);
+        }
         const acShare = pageServiceShareId
           ? await getAcumuladoPostsShare(pageServiceShareId, token)
           : { totalShare: 0, totalImpresiones: 0, totalImpresionesUnicas: 0, frecuencia: 0, totalReactions: 0, totalEngagement: 0, totalClicks: 0, totalComentarios: 0 };
